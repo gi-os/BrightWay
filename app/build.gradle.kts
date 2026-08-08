@@ -1,0 +1,100 @@
+import java.util.Properties
+
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
+
+/**
+ * The key shake-to-report posts issues with. Never in the repository: `local.properties` is
+ * ignored by git, and CI hands it in from a repository secret. An empty string is a working
+ * build — reports queue on the phone and go out from a later one that has the key.
+ */
+val reportToken: String = run {
+    val local = rootProject.file("local.properties")
+    val fromFile = if (local.exists()) {
+        Properties().apply { local.inputStream().use { load(it) } }.getProperty("reportToken")
+    } else {
+        null
+    }
+    fromFile ?: System.getenv("REPORT_TOKEN") ?: ""
+}
+
+android {
+    namespace = "com.gios.brightway"
+    compileSdk = 35
+    buildToolsVersion = "35.0.0"
+
+    defaultConfig {
+        applicationId = "com.gios.brightway"
+        minSdk = 29
+        targetSdk = 35
+        // CI overwrites both from the workflow run number; see .github/workflows/build.yml
+        versionCode = 1
+        versionName = "1.0.0"
+
+        buildConfigField("String", "REPORT_TOKEN", "\"$reportToken\"")
+        buildConfigField("String", "REPORT_REPO", "\"gi-os/light-reports\"")
+
+        // The LPIII is arm64 only.
+        ndk { abiFilters += "arm64-v8a" }
+    }
+
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("../keystore/brightway.jks")
+            storePassword = "brightway"
+            keyAlias = "brightway"
+            keyPassword = "brightway"
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Same committed key as debug, so either APK upgrades over the other.
+            signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+}
+
+dependencies {
+    // Shake-to-report, the wheel, and the shared type/greys.
+    implementation("com.gios:light-common:1.2.2")
+
+    val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
+    implementation(composeBom)
+    implementation("androidx.core:core-ktx:1.15.0")
+    implementation("androidx.activity:activity-compose:1.9.3")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-graphics")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
+    implementation("androidx.navigation:navigation-compose:2.8.5")
+
+    // Google Routes / Places / Geocoding — plain REST, no Play Services on LightOS.
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // QR scanning (API key entry)
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
+
+    // Geo math is pure Kotlin with no Android imports, so it runs here.
+    testImplementation("junit:junit:4.13.2")
+}

@@ -1,0 +1,67 @@
+name: Check
+
+# Compiles and tests without publishing anything.
+#
+# The point of this workflow is that a push to the default branch cuts a release, so the
+# default branch is a bad place to find out that something doesn't compile. Any other branch
+# runs this instead: the same build, minus the signing checks and the release.
+on:
+  push:
+    branches-ignore: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Unit tests
+        run: ./gradlew :app:testDebugUnitTest --stacktrace
+        env:
+          # GitHub Packages has no anonymous read, so resolving light-common needs a token.
+          # GITHUB_ACTOR is on the runner already; GITHUB_TOKEN is not exported to steps and
+          # has to be handed in. GPR_TOKEN takes precedence if a cross-repo PAT is ever needed:
+          # a repo-scoped GITHUB_TOKEN's read access to another repository's package is not
+          # guaranteed under a personal account.
+          GPR_USER: ${{ secrets.GPR_USER }}
+          GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compile
+        # Release too, not only debug. Debug is not minified, so a debug-only check cannot see
+        # an R8 problem — and R8 is the part of this app most likely to break, since keep rules
+        # fail at build time here and at runtime on the phone. The signing key is committed, so
+        # a release build needs no secret.
+        run: ./gradlew :app:assembleDebug :app:assembleRelease --stacktrace
+        env:
+          # GitHub Packages has no anonymous read, so resolving light-common needs a token.
+          # GITHUB_ACTOR is on the runner already; GITHUB_TOKEN is not exported to steps and
+          # has to be handed in. GPR_TOKEN takes precedence if a cross-repo PAT is ever needed:
+          # a repo-scoped GITHUB_TOKEN's read access to another repository's package is not
+          # guaranteed under a personal account.
+          GPR_USER: ${{ secrets.GPR_USER }}
+          GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: BrightWay-check-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

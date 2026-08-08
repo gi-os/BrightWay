@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- ZXing's embedded scanner for API-key entry. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!--
+        Colour during navigation. LightOS's black-and-white is a SurfaceFlinger colour
+        matrix pinned by accessibility_display_daltonizer_enabled; flipping it needs this
+        signature|privileged|development permission, granted once over adb:
+          adb shell pm grant com.gios.brightway android.permission.WRITE_SECURE_SETTINGS
+        Ungranted, the app stays greyscale and everything else works.
+    -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
+
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="Directions"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.BrightWay">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="Directions"
+            android:theme="@style/Theme.BrightWay">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

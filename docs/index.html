@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BrightWay — key QR</title>
+<style>
+  body { background:#000; color:#fff; font-family:system-ui,-apple-system,sans-serif;
+         display:flex; flex-direction:column; align-items:center; gap:1.2rem;
+         min-height:100vh; margin:0; padding:2rem 1rem; box-sizing:border-box; }
+  h1 { font-weight:300; letter-spacing:.12em; font-size:1.3rem; margin:0; }
+  p  { color:#9a9a9a; max-width:34rem; text-align:center; line-height:1.5; margin:0; }
+  input { background:#000; color:#fff; border:none; border-bottom:1px solid #5e5e5e;
+          padding:.6rem .2rem; width:min(30rem,90vw); font-size:1rem; outline:none; }
+  #qr { background:#fff; padding:16px; display:none; }
+  a { color:#9a9a9a; }
+</style>
+</head>
+<body>
+<h1>BRIGHTWAY · KEY</h1>
+<p>Paste your Google Maps Platform API key. The QR is generated entirely in your browser —
+nothing is sent anywhere. On the phone: Settings → SCAN.</p>
+<p>The key needs the <b>Routes API</b> and <b>Places API (New)</b> enabled in
+<a href="https://console.cloud.google.com/google/maps-apis">Google Cloud Console</a>.</p>
+<input id="key" placeholder="AIza…" autocomplete="off" spellcheck="false">
+<div id="qr"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+  const box = document.getElementById('qr');
+  let qr = null;
+  document.getElementById('key').addEventListener('input', (e) => {
+    const v = e.target.value.trim();
+    box.style.display = v ? 'block' : 'none';
+    box.innerHTML = '';
+    if (v) qr = new QRCode(box, { text: 'brightway:' + v, width: 240, height: 240,
+                                  correctLevel: QRCode.CorrectLevel.M });
+  });
+</script>
+</body>
+</html>
