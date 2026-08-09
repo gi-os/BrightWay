@@ -1,17 +1,18 @@
-## BrightWay v1.0 — first release
+## BrightWay v1.1 — the map view
 
-Directions for the Light Phone III, text-first.
+- **Route on a map**: tap MAP on the nav screen. The whole route drawn on a real map
+  (Maps Static API — enable it on your key alongside Routes and Places), destination
+  marked, your position marked.
+- **Wheel zoom**: turn the wheel to drop from the whole-route overview into street level
+  centred on you; the map follows as you walk. Zoom past the bottom to get the overview
+  back.
+- Map images are cached, and follow mode only re-fetches after ~50 m of movement, so a
+  trip costs a handful of Static Maps calls out of your 10k/month free tier.
+- The step list keeps the wheel when the map is hidden; the map takes it when shown —
+  never both.
 
-- **Walking navigation**: Places search, one-tap saved places and recents, turn-by-turn
-  with a full-screen instruction, live GPS distance, auto-advancing steps, wheel-scrolled
-  trip overview.
-- **Subway + bus**: up to three transit itineraries per trip — line bullets, headsigns,
-  stop counts, board/exit stops, departure and arrival times.
-- **Compass mode**: bearing and distance to your destination as the crow flies. No key,
-  no signal, no problem.
-- **Bring your own key**: Google Maps Platform key scanned in by QR
-  (<https://gi-os.github.io/BrightWay/>); never ships in the APK.
-- **Colour while navigating** (optional): with the one-time `WRITE_SECURE_SETTINGS` adb
-  grant, subway bullets draw in their real MTA colours and greyscale returns when you end
-  the route.
-- Shake to report a bug, straight from the phone.
+### v1.0 — first release
+
+Walking navigation (Places search, saved places, turn-by-turn, auto-advancing steps),
+subway + bus itineraries with real line colours, compass crow-flies mode, BYO Google key
+by QR, optional colour during nav, shake to report.

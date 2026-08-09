@@ -9,6 +9,7 @@ import com.gios.brightway.loc.Locator
 import com.gios.brightway.net.ApiKeyMissing
 import com.gios.brightway.net.GoogleMaps
 import com.gios.brightway.net.RouteOption
+import com.gios.brightway.net.StaticMap
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -17,6 +18,7 @@ class WayViewModel(app: Application) : AndroidViewModel(app) {
     val store = Store(app)
     val locator = Locator(app)
     private val maps = GoogleMaps { store.apiKey }
+    val staticMap = StaticMap { store.apiKey }
 
     val query = MutableStateFlow("")
     val results = MutableStateFlow<List<Place>>(emptyList())

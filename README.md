@@ -18,7 +18,7 @@ you bring your own Google Maps Platform key.
 ## Bring your own key
 
 1. In [Google Cloud Console](https://console.cloud.google.com/google/maps-apis), create an
-   API key with **Routes API** and **Places API (New)** enabled. One phone stays inside
+   API key with **Routes API**, **Places API (New)** and **Maps Static API** enabled. One phone stays inside
    the monthly free tier.
 2. Open <https://gi-os.github.io/BrightWay/> on your computer, paste the key, scan the QR
    from Settings → SCAN. The page is client-side only; the key lives in the app's private

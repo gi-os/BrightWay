@@ -1,6 +1,7 @@
 package com.gios.brightway.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,6 +21,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -56,8 +58,9 @@ fun NavScreen(vm: WayViewModel, onDone: () -> Unit) {
     val fix by vm.locator.fix.collectAsState()
     val context = LocalContext.current
     var stepIndex by remember { mutableIntStateOf(0) }
+    var showMap by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
-    WheelScroll(listState)
+    WheelScroll(listState, active = !showMap)
 
     // Colour while navigating, greyscale on the way out. The flip is one secure-settings
     // integer; ungranted it just returns false and the screen stays exactly as legible.
@@ -78,8 +81,28 @@ fun NavScreen(vm: WayViewModel, onDone: () -> Unit) {
     }
 
     Column(Modifier.fillMaxSize()) {
-        MenuRow("‹ END", detail = Geo.prettyDuration(route.durationS), onClick = onDone)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) {
+                MenuRow("‹ END", detail = Geo.prettyDuration(route.durationS), onClick = onDone)
+            }
+            Text(
+                if (showMap) "[ MAP ]" else "MAP",
+                style = MaterialTheme.typography.labelLarge,
+                color = if (showMap) Color.White else Faint,
+                modifier = Modifier
+                    .clickable { showMap = !showMap }
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+            )
+        }
         Rule()
+
+        if (showMap) {
+            // The map owns the wheel while it is up (zoom), so the step list below is
+            // deliberately not composed at the same time — two WheelScroll consumers
+            // fight over the same notches.
+            MapView(vm, route)
+            return@Column
+        }
 
         if (current != null) {
             Column(Modifier.fillMaxWidth().padding(24.dp)) {

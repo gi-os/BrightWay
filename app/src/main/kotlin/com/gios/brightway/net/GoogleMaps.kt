@@ -43,6 +43,9 @@ data class RouteOption(
     val durationS: Long,
     val distanceM: Double,
     val steps: List<Step>,
+    /** Google encoded polyline for the whole route; the map view hands it straight back
+     *  to the Static Maps API without ever decoding it. */
+    val encodedPolyline: String = "",
 )
 
 class ApiKeyMissing : IOException("No API key — scan one in Settings")
@@ -109,7 +112,7 @@ class GoogleMaps(private val apiKey: () -> String) {
             .header("X-Goog-Api-Key", key())
             // Coarse mask on purpose: we want legs whole, and the response for a single
             // trip is a few KB either way.
-            .header("X-Goog-FieldMask", "routes.duration,routes.distanceMeters,routes.legs")
+            .header("X-Goog-FieldMask", "routes.duration,routes.distanceMeters,routes.legs,routes.polyline.encodedPolyline")
             .post(body.toString().toRequestBody(json))
             .build()
         val o = execute(req)
@@ -169,7 +172,8 @@ class GoogleMaps(private val apiKey: () -> String) {
         } else {
             com.gios.brightway.util.Geo.prettyDistance(distanceM)
         }
-        return RouteOption(mode, summary, durationS, distanceM, steps)
+        val poly = r.optJSONObject("polyline")?.optString("encodedPolyline").orEmpty()
+        return RouteOption(mode, summary, durationS, distanceM, steps, poly)
     }
 
     private fun parseTransit(t: JSONObject): TransitRide {
