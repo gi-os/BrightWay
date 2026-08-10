@@ -19,6 +19,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -48,6 +49,7 @@ fun CompassScreen(vm: WayViewModel) {
     val dest = vm.destination.collectAsState().value ?: vm.store.saved.firstOrNull()
 
     var azimuth by remember { mutableFloatStateOf(0f) }
+    var accuracy by remember { mutableIntStateOf(-1) }
     DisposableEffect(Unit) {
         val sm = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
         val sensor = sm.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
@@ -58,8 +60,9 @@ fun CompassScreen(vm: WayViewModel) {
                 SensorManager.getRotationMatrixFromVector(r, e.values)
                 SensorManager.getOrientation(r, o)
                 azimuth = Math.toDegrees(o[0].toDouble()).toFloat()
+                accuracy = e.accuracy
             }
-            override fun onAccuracyChanged(s: Sensor?, a: Int) = Unit
+            override fun onAccuracyChanged(s: Sensor?, a: Int) { accuracy = a }
         }
         if (sensor != null) sm.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_UI)
         onDispose { sm.unregisterListener(listener) }
@@ -102,6 +105,15 @@ fun CompassScreen(vm: WayViewModel) {
         Text(Geo.prettyDistance(dist), style = MaterialTheme.typography.displaySmall,
             color = Color.White)
         Text("as the crow flies", style = MaterialTheme.typography.bodyMedium, color = Faint,
+            modifier = Modifier.padding(bottom = 4.dp))
+        val (label, col) = when (accuracy) {
+            3 -> "high confidence" to Color.White
+            2 -> "medium confidence" to Dim
+            1 -> "low — calibrate?" to Faint
+            0 -> "unreliable — wave phone" to Faint
+            else -> "calibrating…" to Faint
+        }
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = col,
             modifier = Modifier.padding(bottom = 16.dp))
     }
 }
