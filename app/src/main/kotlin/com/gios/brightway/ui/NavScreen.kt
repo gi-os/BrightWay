@@ -272,7 +272,7 @@ fun NavCompass(vm: WayViewModel, route: RouteOption, fix: Location?, currentStep
         }
         Text(Geo.prettyDistance(dist), style = MaterialTheme.typography.displaySmall,
             color = Color.White)
-        AccuracyLabel(heading.accuracy, Modifier.padding(top = 4.dp))
+        AccuracyLabel(heading, Modifier.padding(top = 4.dp))
         Text("wheel to go back", style = MaterialTheme.typography.labelSmall, color = Faint,
             modifier = Modifier.padding(top = 6.dp, bottom = 12.dp))
     }

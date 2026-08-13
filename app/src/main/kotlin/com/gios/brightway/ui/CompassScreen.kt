@@ -55,6 +55,6 @@ fun CompassScreen(vm: WayViewModel) {
         }
         Text(Geo.prettyDistance(dist), style = MaterialTheme.typography.displaySmall,
             color = Color.White)
-        AccuracyLabel(heading.accuracy, Modifier.padding(top = 4.dp, bottom = 16.dp))
+        AccuracyLabel(heading, Modifier.padding(top = 4.dp, bottom = 16.dp))
     }
 }

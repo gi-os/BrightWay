@@ -7,6 +7,7 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.location.Location
+import android.os.SystemClock
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -14,9 +15,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -31,30 +35,67 @@ import com.gios.light.common.theme.Faint
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.sqrt
+import kotlinx.coroutines.delay
 
 /**
- * One compass, shared by the standalone screen and the in-nav view. The two fixes that
- * made it point the right way live here so they can never diverge again:
+ * One compass, shared by the standalone screen and the in-nav view.
  *
- *  1. Declination. The rotation vector is referenced to MAGNETIC north; GPS bearings are
- *     TRUE north. In NYC that difference is ~13°W — enough to send you up the wrong block
- *     while the arrow swears you're fine. [GeomagneticField] from the current fix closes it.
- *  2. Posture. The flat-case azimuth is meaningless once the phone is held up to be read;
- *     past ~40° of pitch the matrix is remapped so heading means "where the back of the
- *     phone points" — which is how a person actually aims a phone at a street.
+ * Heading comes from two sources, best one wins:
+ *
+ *  1. GPS course while actually walking. `fix.bearing` is true north by construction and
+ *     completely immune to the magnetometer's moods — and the LPIII's magnetometer has
+ *     moods: it reports "high confidence" on stale hard-iron calibration until a
+ *     figure-8 shake fixes it. If you're moving, the track is the truth.
+ *  2. The rotation vector when standing still, declination-corrected (magnetic → true
+ *     north, ~13°W in NYC) and posture-remapped (past ~40° of pitch, heading means
+ *     "where the back of the phone points").
+ *
+ * A raw magnetometer watch runs alongside: field magnitude far outside Earth's 25–65 µT
+ * means the sensor is reading a subway rail / radiator / magnet, and the label says so
+ * instead of parroting the HAL's confidence.
  */
-class HeadingState {
-    /** Degrees clockwise from TRUE north; NaN until the first sensor event. */
-    var azimuthDeg by mutableFloatStateOf(Float.NaN)
+class HeadingState internal constructor() {
+    /** Sensor-derived degrees clockwise from TRUE north; NaN until the first event. */
+    internal var sensorAzimuth by mutableFloatStateOf(Float.NaN)
+
+    /** GPS course over ground, NaN unless walking with a fresh fix. */
+    internal var gpsCourse by mutableFloatStateOf(Float.NaN)
 
     /** Rotation vector accuracy, -1 unknown then 0 (unreliable) .. 3 (high). */
     var accuracy by mutableIntStateOf(-1)
+        internal set
+
+    /** Raw field magnitude outside the plausible-Earth band. */
+    var interference by mutableStateOf(false)
+        internal set
+
+    val fromGps: Boolean get() = !gpsCourse.isNaN()
+
+    val azimuthDeg: Float get() = if (fromGps) gpsCourse else sensorAzimuth
 }
 
 @Composable
 fun rememberHeading(fix: Location?): HeadingState {
     val context = LocalContext.current
     val state = remember { HeadingState() }
+
+    // A 1 Hz tick so a stale fix can expire: Locator only reports after 2 m of movement,
+    // so when you stop walking no new fix arrives to tell us the old course is dead.
+    var nowMs by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            nowMs = SystemClock.elapsedRealtime()
+            delay(1000)
+        }
+    }
+    val fixAgeMs = fix?.let { (nowMs - it.elapsedRealtimeNanos / 1_000_000).coerceAtLeast(0) }
+    state.gpsCourse =
+        if (fix != null && fixAgeMs != null && fixAgeMs < 3500 &&
+            fix.hasBearing() && fix.hasSpeed() && fix.speed > 0.8f
+        ) (fix.bearing % 360f + 360f) % 360f
+        else Float.NaN
+
     // Declination drifts by fractions of a degree per year and per city — keying on the
     // whole degree of the fix recomputes it when it could possibly matter and never else.
     val declination = remember(fix?.latitude?.toInt(), fix?.longitude?.toInt()) {
@@ -67,28 +108,50 @@ fun rememberHeading(fix: Location?): HeadingState {
     }
     DisposableEffect(declination) {
         val sm = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        val sensor = sm.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        val rotation = sm.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        val magnet = sm.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
         val listener = object : SensorEventListener {
             private val r = FloatArray(9)
             private val r2 = FloatArray(9)
             private val o = FloatArray(3)
+            private val vec = FloatArray(4)
             override fun onSensorChanged(e: SensorEvent) {
-                SensorManager.getRotationMatrixFromVector(r, e.values)
-                SensorManager.getOrientation(r, o)
-                if (abs(Math.toDegrees(o[1].toDouble())) > 40) {
-                    SensorManager.remapCoordinateSystem(
-                        r, SensorManager.AXIS_X, SensorManager.AXIS_Z, r2,
-                    )
-                    SensorManager.getOrientation(r2, o)
+                when (e.sensor.type) {
+                    Sensor.TYPE_ROTATION_VECTOR -> {
+                        // Some HALs ship 5-element rotation vectors and
+                        // getRotationMatrixFromVector throws on them. Truncate.
+                        val v = if (e.values.size > 4) {
+                            System.arraycopy(e.values, 0, vec, 0, 4); vec
+                        } else e.values
+                        SensorManager.getRotationMatrixFromVector(r, v)
+                        SensorManager.getOrientation(r, o)
+                        if (abs(Math.toDegrees(o[1].toDouble())) > 40) {
+                            SensorManager.remapCoordinateSystem(
+                                r, SensorManager.AXIS_X, SensorManager.AXIS_Z, r2,
+                            )
+                            SensorManager.getOrientation(r2, o)
+                        }
+                        state.sensorAzimuth =
+                            (((Math.toDegrees(o[0].toDouble()) + declination) % 360.0 + 360.0) % 360.0)
+                                .toFloat()
+                        if (e.accuracy in 0..3) state.accuracy = e.accuracy
+                    }
+                    Sensor.TYPE_MAGNETIC_FIELD -> {
+                        val m = sqrt(
+                            e.values[0] * e.values[0] +
+                                e.values[1] * e.values[1] +
+                                e.values[2] * e.values[2],
+                        )
+                        state.interference = m < 20f || m > 70f
+                    }
                 }
-                state.azimuthDeg =
-                    (((Math.toDegrees(o[0].toDouble()) + declination) % 360.0 + 360.0) % 360.0)
-                        .toFloat()
-                if (e.accuracy in 0..3) state.accuracy = e.accuracy
             }
-            override fun onAccuracyChanged(s: Sensor?, a: Int) { state.accuracy = a }
+            override fun onAccuracyChanged(s: Sensor?, a: Int) {
+                if (s?.type == Sensor.TYPE_ROTATION_VECTOR) state.accuracy = a
+            }
         }
-        if (sensor != null) sm.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_UI)
+        if (rotation != null) sm.registerListener(listener, rotation, SensorManager.SENSOR_DELAY_UI)
+        if (magnet != null) sm.registerListener(listener, magnet, SensorManager.SENSOR_DELAY_UI)
         onDispose { sm.unregisterListener(listener) }
     }
     return state
@@ -164,15 +227,22 @@ fun CompassFace(bearingDeg: Float, headingDeg: Float, modifier: Modifier = Modif
     }
 }
 
-/** The rotation vector's own confidence, as one quiet line. */
+/**
+ * Where the heading is coming from and whether to believe it, as one quiet line.
+ * Priority: GPS course (best) → interference warning (urgent) → the HAL's own confidence.
+ */
 @Composable
-fun AccuracyLabel(accuracy: Int, modifier: Modifier = Modifier) {
-    val (label, col) = when (accuracy) {
-        3 -> "high confidence" to Color.White
-        2 -> "medium confidence" to Dim
-        1 -> "low — wave phone in a figure 8" to Faint
-        0 -> "unreliable — wave phone in a figure 8" to Faint
-        else -> "calibrating…" to Faint
+fun AccuracyLabel(heading: HeadingState, modifier: Modifier = Modifier) {
+    val (label, col) = when {
+        heading.fromGps -> "heading from GPS" to Color.White
+        heading.interference -> "magnetic interference — move from metal" to Faint
+        else -> when (heading.accuracy) {
+            3 -> "compass ok · walk for GPS heading" to Dim
+            2 -> "medium confidence" to Dim
+            1 -> "low — wave phone in a figure 8" to Faint
+            0 -> "unreliable — wave phone in a figure 8" to Faint
+            else -> "calibrating…" to Faint
+        }
     }
     Text(label, style = MaterialTheme.typography.bodyMedium, color = col, modifier = modifier)
 }

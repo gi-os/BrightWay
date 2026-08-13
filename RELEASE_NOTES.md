@@ -1,3 +1,17 @@
+## BrightWay v1.3 — believe the GPS, not the magnetometer
+
+- **Heading from GPS while walking.** The magnetometer reports "high confidence" on stale
+  calibration until you shake the phone in a figure 8 — so while you're actually moving
+  (fresh fix, > ~2 mph), the needle now follows your GPS course over ground instead:
+  true north by construction, immune to magnets, rails, and radiators. The label reads
+  "heading from GPS". Standing still falls back to the sensor.
+- **Interference detection.** A raw magnetometer watch runs alongside: field strength
+  outside Earth's plausible 25–65 µT band now says "magnetic interference — move from
+  metal" instead of pretending the compass is fine.
+- **Stale-course guard.** Fixes only arrive after ~2 m of movement, so a 1 s ticker
+  expires the GPS course ~3.5 s after you stop — no frozen needle.
+- Guards against 5-element rotation vectors (some HALs ship them; the matrix call throws).
+
 ## BrightWay v1.2 — the compass points the right way
 
 - **Compass bearing fixed.** The needle was referenced to magnetic north while GPS
