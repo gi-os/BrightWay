@@ -1,3 +1,13 @@
+## BrightWay v1.4 — see where it is before you go
+
+- **Search results open on a map.** Tapping a result now shows the place pinned on a
+  map — name, address, how far away it is, your own position as the tiny marker. Wheel
+  zooms (11–19). GO hands it to the same routes screen as always; BACK returns to the
+  results.
+- Saved places and recents still route in one tap — you know where home is.
+- Same say-why-it-failed rule as the nav map: fetch errors show the reason and TAP TO
+  RETRY instead of loading forever.
+
 ## BrightWay v1.3 — believe the GPS, not the magnetometer
 
 - **Heading from GPS while walking.** The magnetometer reports "high confidence" on stale

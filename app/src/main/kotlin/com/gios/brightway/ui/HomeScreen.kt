@@ -31,7 +31,7 @@ import com.gios.light.common.theme.Faint
  * floating labels), then saved places and recents so the common trips are one tap.
  */
 @Composable
-fun HomeScreen(vm: WayViewModel, onRoutes: () -> Unit) {
+fun HomeScreen(vm: WayViewModel, onRoutes: () -> Unit, onPlace: (com.gios.brightway.data.Place) -> Unit) {
     val query by vm.query.collectAsState()
     val results by vm.results.collectAsState()
     val busy by vm.busy.collectAsState()
@@ -81,7 +81,9 @@ fun HomeScreen(vm: WayViewModel, onRoutes: () -> Unit) {
                 item { SectionLabel("RESULTS") }
                 items(results.size) { i ->
                     val p = results[i]
-                    MenuRow(p.name, sub = p.address, onClick = { vm.route(p) { onRoutes() } })
+                    // A searched place is somewhere you've never been — show it on the
+                    // map first. Saved and recents skip the preview; you know where home is.
+                    MenuRow(p.name, sub = p.address, onClick = { onPlace(p) })
                 }
             }
             val saved = vm.store.saved

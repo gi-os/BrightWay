@@ -27,13 +27,17 @@ class StaticMap(private val apiKey: () -> String) {
     private val cache = LruCache<String, Bitmap>(8)
 
     /**
-     * @param zoom null = auto-fit the whole route; 12..19 = follow mode around [centerLat/Lon].
+     * One picture, three optional layers: a route ([encodedPolyline]), the user's position
+     * ([userLat]/[userLon], tiny marker), and the destination (mid marker). zoom == null
+     * auto-fits everything on the picture; otherwise the view is [centerLat]/[centerLon]
+     * at [zoom].
      */
     suspend fun fetch(
-        encodedPolyline: String,
-        centerLat: Double?, centerLon: Double?,
         destLat: Double, destLon: Double,
-        zoom: Int?,
+        encodedPolyline: String = "",
+        userLat: Double? = null, userLon: Double? = null,
+        centerLat: Double? = null, centerLon: Double? = null,
+        zoom: Int? = null,
     ): MapFetch = withContext(Dispatchers.IO) {
         val key = apiKey()
         if (key.isBlank()) return@withContext MapFetch(null, "No API key — scan one in Settings")
@@ -51,12 +55,12 @@ class StaticMap(private val apiKey: () -> String) {
                 .append(java.net.URLEncoder.encode(enc, "UTF-8"))
         }
         sb.append("&markers=size:mid%7C").append(destLat).append(',').append(destLon)
-        if (centerLat != null && centerLon != null) {
-            sb.append("&markers=size:tiny%7C").append(centerLat).append(',').append(centerLon)
-            if (zoom != null) {
-                sb.append("&center=").append(centerLat).append(',').append(centerLon)
-                sb.append("&zoom=").append(zoom.coerceIn(3, 20))
-            }
+        if (userLat != null && userLon != null) {
+            sb.append("&markers=size:tiny%7C").append(userLat).append(',').append(userLon)
+        }
+        if (zoom != null && centerLat != null && centerLon != null) {
+            sb.append("&center=").append(centerLat).append(',').append(centerLon)
+            sb.append("&zoom=").append(zoom.coerceIn(3, 20))
         }
         sb.append("&key=").append(key)
         val url = sb.toString()

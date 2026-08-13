@@ -23,6 +23,9 @@ class WayViewModel(app: Application) : AndroidViewModel(app) {
     val query = MutableStateFlow("")
     val results = MutableStateFlow<List<Place>>(emptyList())
     val destination = MutableStateFlow<Place?>(null)
+
+    /** The search result being looked at on the place map, before any routing. */
+    val previewPlace = MutableStateFlow<Place?>(null)
     val options = MutableStateFlow<List<RouteOption>>(emptyList())
     val chosen = MutableStateFlow<RouteOption?>(null)
     val busy = MutableStateFlow(false)

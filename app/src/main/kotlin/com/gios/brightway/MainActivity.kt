@@ -27,6 +27,7 @@ import androidx.navigation.compose.rememberNavController
 import com.gios.brightway.ui.CompassScreen
 import com.gios.brightway.ui.HomeScreen
 import com.gios.brightway.ui.NavScreen
+import com.gios.brightway.ui.PlaceScreen
 import com.gios.brightway.ui.RoutesScreen
 import com.gios.brightway.ui.SettingsScreen
 import com.gios.brightway.ui.TabBar
@@ -127,13 +128,31 @@ class MainActivity : ComponentActivity() {
                     Column(Modifier.fillMaxSize()) {
                         Column(Modifier.weight(1f)) {
                             when (tab) {
-                                0 -> HomeScreen(vm, onRoutes = { nav.navigate("routes") })
+                                0 -> HomeScreen(
+                                    vm,
+                                    onRoutes = { nav.navigate("routes") },
+                                    onPlace = { p ->
+                                        vm.previewPlace.value = p
+                                        nav.navigate("place")
+                                    },
+                                )
                                 1 -> CompassScreen(vm)
                                 else -> SettingsScreen(vm, onScanKey = launchScan)
                             }
                         }
                         TabBar(tab, listOf("GO", "COMPASS", "SETTINGS")) { tab = it }
                     }
+                }
+                composable("place") {
+                    PlaceScreen(
+                        vm,
+                        onGo = {
+                            vm.previewPlace.value?.let { p ->
+                                vm.route(p) { nav.navigate("routes") }
+                            }
+                        },
+                        onBack = { nav.popBackStack() },
+                    )
                 }
                 composable("routes") {
                     RoutesScreen(

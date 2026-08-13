@@ -5,6 +5,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -25,26 +26,22 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.gios.brightway.net.RouteOption
+import com.gios.brightway.util.Geo
 import com.gios.light.common.hw.LocalWheelBus
 import com.gios.light.common.theme.Dim
 import com.gios.light.common.theme.Faint
-import kotlin.math.roundToInt
 
 /**
- * The route on a map. Wheel-driven: turning zooms; the first notch drops out of the
- * whole-route overview into follow mode centred on the GPS fix, and zooming past the
- * bottom returns to overview. One Static Maps GET per (zoom, ~50 m of movement), cached.
- *
- * When a fetch fails the reason is shown and tappable to retry — never a spinner that
- * lies forever.
+ * Where is it, before you commit to going. A searched place pinned on the map — wheel
+ * zooms, your own position is the tiny marker if there's a fix, GO hands the place to
+ * the same routing flow every other entry point uses. Same Static Maps plumbing and the
+ * same say-why-it-failed rule as the nav map.
  */
 @Composable
-fun MapView(vm: WayViewModel, route: RouteOption) {
+fun PlaceScreen(vm: WayViewModel, onGo: () -> Unit, onBack: () -> Unit) {
+    val place = vm.previewPlace.collectAsState().value ?: run { onBack(); return }
     val fix by vm.locator.fix.collectAsState()
-    val dest = vm.destination.collectAsState().value ?: return
-    // zoom == null is the auto-fit overview; 16 is a good first street-level step.
-    var zoom by remember { mutableStateOf<Int?>(null) }
+    var zoom by remember { mutableIntStateOf(16) }
     var bmp by remember { mutableStateOf<Bitmap?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var retry by remember { mutableIntStateOf(0) }
@@ -52,24 +49,15 @@ fun MapView(vm: WayViewModel, route: RouteOption) {
     val bus = LocalWheelBus.current
     LaunchedEffect(bus) {
         bus?.notches?.collect { n ->
-            zoom = when {
-                n > 0 -> ((zoom ?: 15) + 1).coerceAtMost(19)
-                (zoom ?: 0) <= 13 -> null            // zoomed all the way out: overview
-                else -> (zoom ?: 15) - 1
-            }
+            zoom = (zoom + if (n > 0) 1 else -1).coerceIn(11, 19)
         }
     }
 
-    // Re-fetch on zoom change, or in follow mode when the fix moves ~50 m (rounding the
-    // coordinate to ~5e-4 deg buckets throttles a 1 Hz GPS stream to a handful of GETs).
-    val latBucket = fix?.latitude?.let { (it / 5e-4).roundToInt() }
-    val lonBucket = fix?.longitude?.let { (it / 5e-4).roundToInt() }
-    LaunchedEffect(zoom, if (zoom != null) latBucket to lonBucket else null, retry) {
+    LaunchedEffect(zoom, retry) {
         val r = vm.staticMap.fetch(
-            destLat = dest.lat, destLon = dest.lon,
-            encodedPolyline = route.encodedPolyline,
+            destLat = place.lat, destLon = place.lon,
             userLat = fix?.latitude, userLon = fix?.longitude,
-            centerLat = fix?.latitude, centerLon = fix?.longitude,
+            centerLat = place.lat, centerLon = place.lon,
             zoom = zoom,
         )
         if (r.bitmap != null) {
@@ -81,12 +69,41 @@ fun MapView(vm: WayViewModel, route: RouteOption) {
     }
 
     Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) { MenuRow("‹ BACK", onClick = onBack) }
+            Text(
+                "GO ›",
+                style = MaterialTheme.typography.titleMedium,
+                color = Color.White,
+                modifier = Modifier
+                    .clickable { onGo() }
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+            )
+        }
+        Rule()
+
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+            Text(place.name, style = MaterialTheme.typography.titleMedium, color = Color.White)
+            if (place.address.isNotBlank()) {
+                Text(place.address, style = MaterialTheme.typography.bodyMedium, color = Dim)
+            }
+            fix?.let {
+                Text(
+                    Geo.prettyDistance(
+                        Geo.distanceM(it.latitude, it.longitude, place.lat, place.lon),
+                    ) + " away",
+                    style = MaterialTheme.typography.bodyMedium, color = Faint,
+                )
+            }
+        }
+        Rule()
+
         Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
             val b = bmp
             when {
                 b != null -> Image(
                     bitmap = b.asImageBitmap(),
-                    contentDescription = "route map",
+                    contentDescription = "place map",
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,
                 )
@@ -110,11 +127,8 @@ fun MapView(vm: WayViewModel, route: RouteOption) {
             }
         }
         Text(
-            when {
-                error != null && bmp != null -> "map refresh failed · tap here to retry"
-                zoom == null -> "whole route · wheel to zoom in"
-                else -> "zoom $zoom · wheel down for overview"
-            },
+            if (error != null && bmp != null) "map refresh failed · tap here to retry"
+            else "zoom $zoom · wheel",
             style = MaterialTheme.typography.bodyMedium, color = Dim,
             modifier = Modifier
                 .align(Alignment.CenterHorizontally)
