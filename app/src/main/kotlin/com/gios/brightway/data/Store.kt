@@ -21,6 +21,11 @@ class Store(context: Context) {
         get() = prefs.getBoolean("colorNav", false)
         set(v) { prefs.edit().putBoolean("colorNav", v).apply() }
 
+    /** Nav compass points at the destination (crow flies) instead of the next turn. */
+    var compassCrowFlies: Boolean
+        get() = prefs.getBoolean("compassCrowFlies", false)
+        set(v) { prefs.edit().putBoolean("compassCrowFlies", v).apply() }
+
     var saved: List<Place>
         get() = Place.listFromJson(prefs.getString("saved", null))
         set(v) { prefs.edit().putString("saved", Place.listToJson(v)).apply() }

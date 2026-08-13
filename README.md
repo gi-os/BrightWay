@@ -10,7 +10,8 @@ you bring your own Google Maps Platform key.
   itineraries (Routes API). Pick one; the nav screen shows the current turn huge, the live
   GPS distance to it, and auto-advances as you walk. Transit steps show the bullet, the
   headsign, stop count and exit stop.
-- **COMPASS** — bearing + distance to your destination, as the crow flies. Works with no
+- **COMPASS** — bearing + distance to your destination, as the crow flies (true-north
+  corrected). During nav, toggle it between the next turn and the destination. Works with no
   key and no signal.
 - **SETTINGS** — scan your API key in by QR, save places (Home, Work) from where you're
   standing, toggle colour.
