@@ -71,5 +71,16 @@
                 <data android:scheme="geo" />
             </intent-filter>
         </activity>
+        <!--
+          Where you went, for BrightNotebook's day. This app was the only thing on the phone that
+          knew you walked somewhere and the only thing that forgot it immediately — see
+          data/Trips.kt. Exported with no permission, like the collection's other bridges, and
+          read-only.
+        -->
+        <provider
+            android:name=".share.TripsProvider"
+            android:authorities="com.gios.brightway.trips"
+            android:exported="true" />
+
     </application>
 </manifest>

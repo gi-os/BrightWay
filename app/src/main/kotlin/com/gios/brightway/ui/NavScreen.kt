@@ -76,6 +76,16 @@ fun NavScreen(vm: WayViewModel, onDone: () -> Unit) {
         onDispose { if (vm.store.colorNav) ColorMode.setColor(context, false) }
     }
 
+    // The trip is closed when this screen goes, whichever way it went — the END row, the back
+    // gesture, or the app being killed and disposing on the way out. `arrived` is read from a box
+    // rather than from `stepIndex` directly: `onDispose` captures the value it was composed with,
+    // and the whole question is what the last step was doing at the moment of leaving.
+    val reachedLast = remember { mutableStateOf(false) }
+    reachedLast.value = stepIndex >= route.steps.lastIndex && route.steps.isNotEmpty()
+    DisposableEffect(Unit) {
+        onDispose { vm.finishTrip(reachedLast.value) }
+    }
+
     val steps = route.steps
     val current = steps.getOrNull(stepIndex)
 

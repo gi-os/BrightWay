@@ -1,3 +1,25 @@
+## BrightWay v1.8 — it remembers where you went
+
+**A journey log, and a provider for it.** This app knew every trip and forgot each one immediately.
+`recents` looks like a history and is not: twelve destinations, deduplicated, with no times on them,
+so a second walk to the same place overwrote the first and a day's travel was gone within the hour.
+
+Now a trip is opened when a route is chosen and closed when navigation ends. Both halves are needed
+and neither is enough on its own — the choice knows where, how, how far and how long it *should*
+take; only the ending knows whether you got there and what it actually took.
+
+**Arrival is recorded, not assumed.** Ending navigation and giving up on it are the same gesture
+here — there is one END row — so arriving is inferred from having reached the final step and stored
+as its own fact. "Walked to Union Square" and "set off towards Union Square" are different days.
+
+**`content://com.gios.brightway.trips/trips/2026-08-25`** answers with a row per trip started that
+day: when it began and ended, walk or transit, the place, the planned duration, the distance, and
+whether you got there. Read-only, no permission, the same shape as BrightRecorder's clips bridge —
+and BrightNotebook is why it exists: "Walked to Union Square, 18 minutes" was the most obviously
+missing line on a day it builds out of every other app on the phone.
+
+Still `SharedPreferences`, as the file's own argument says: a database for a list this size is
+machinery this app does not need. Capped at 120 trips, which is a few weeks of ordinary use.
 ## BrightWay v1.7 — the new key is withdrawn; this installs over what you have
 
 **No uninstall. This is an ordinary update.** v1.6 was signed with a brand-new certificate, which

@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.gios.brightway.data.Place
 import com.gios.brightway.data.Store
+import com.gios.brightway.data.Trips
 import com.gios.brightway.loc.Locator
 import com.gios.brightway.net.ApiKeyMissing
 import com.gios.brightway.net.GoogleMaps
@@ -19,6 +20,9 @@ class WayViewModel(app: Application) : AndroidViewModel(app) {
     val locator = Locator(app)
     private val maps = GoogleMaps { store.apiKey }
     val staticMap = StaticMap { store.apiKey }
+
+    /** The journey log. See [com.gios.brightway.data.Trips]. */
+    private val trips = Trips(app)
 
     val query = MutableStateFlow("")
     val results = MutableStateFlow<List<Place>>(emptyList())
@@ -83,7 +87,41 @@ class WayViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun choose(option: RouteOption) { chosen.value = option }
+    /**
+     * A route was chosen, which is the moment a trip begins.
+     *
+     * The only place where both halves are known: [destination] says where, and the option says how,
+     * how far and how long it should take. `route()` is too early — the options have not been
+     * fetched and the user may never start one — and the nav screen is too late, because by then the
+     * choice is in the past.
+     *
+     * Recorded for BrightNotebook's day, which had no way to know you went anywhere. See
+     * [com.gios.brightway.data.Trips].
+     */
+    fun choose(option: RouteOption) {
+        chosen.value = option
+        val to = destination.value ?: return
+        runCatching {
+            trips.start(
+                place = to,
+                mode = option.mode,
+                plannedS = option.durationS,
+                distanceM = option.distanceM,
+                now = System.currentTimeMillis(),
+            )
+        }
+    }
+
+    /**
+     * Navigation ended, at whichever step it had reached.
+     *
+     * [arrived] is the caller's answer rather than this object's, because the only thing that knows
+     * whether the last step was reached is the screen counting them — and ending navigation and
+     * abandoning it are the same gesture in this app.
+     */
+    fun finishTrip(arrived: Boolean) {
+        runCatching { trips.finish(arrived, System.currentTimeMillis()) }
+    }
 
     private fun message(t: Throwable): String = when (t) {
         is ApiKeyMissing -> "No API key — scan one in Settings"
