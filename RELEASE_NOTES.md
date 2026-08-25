@@ -1,3 +1,33 @@
+## BrightWay v1.6 — a new signing key, and one reinstall to take it
+
+**You have to uninstall BrightWay and install it again.** Not an update — a full uninstall
+first. Android identifies an app by its package name *and* the certificate it was signed
+with, so a build signed with a different key is a different app as far as the phone is
+concerned. Installing this one over the old one fails with a bare `Failure: Invalid` and no
+explanation. Uninstall, then install; it is a one-time cost and nothing after this release
+asks for it again.
+
+Uninstalling clears the app's data, which for BrightWay is the API key, saved places and
+recents. Have the key QR to hand before you start.
+
+**Why.** The release key was committed to this repository with its password written three
+lines under it in `app/build.gradle.kts`. Anyone who cloned it could build an APK that
+Android would accept as an update to the one on your phone — which is the whole of the
+protection Android offers, handed out with the source. The old key is now retired and the
+new one is a CI secret: the workflow decodes it at build time, `keystore/*.jks` is
+gitignored so a checkout cannot commit it back, and the certificate the release actually
+carries is checked against `signing-fingerprint.txt` before anything is published.
+
+A build without the secret — a branch check, a local clone — still compiles and still
+produces an APK. It just is not signed with the release key and will not install over one.
+That is the right way for it to fail.
+
+**Also in this build.** Every GitHub Action the workflows use is pinned to a commit SHA
+rather than a moving tag, so a compromised or retagged action cannot quietly change what
+builds your APK. And a commit that touches `signing-fingerprint.txt` no longer skips the
+release workflow — it used to be on the ignore list, which meant the one commit that
+rotates a key was also the one commit that shipped nothing.
+
 ## BrightWay v1.5 — somewhere to hand a place to
 
 **Another app can now say "go here".** BrightWay had no intent surface at all: one activity, one

@@ -21,6 +21,20 @@ val reportToken: String = run {
     fromFile ?: System.getenv("REPORT_TOKEN") ?: ""
 }
 
+// An empty token compiles and runs, which is exactly the problem: shake-to-report
+// queues every report on the phone and waits for a build that has the key, and if no
+// build ever has one it waits forever without saying so. This repository has no
+// REPORT_TOKEN secret, so every release shipped so far is that build. Say it out loud
+// on a release build rather than letting it stay silent.
+if (reportToken.isEmpty() &&
+    gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
+) {
+    logger.warn(
+        "BrightWay: REPORT_TOKEN is empty. Shake-to-report will queue reports on the " +
+            "phone and never post them. Set the REPORT_TOKEN repository secret."
+    )
+}
+
 android {
     namespace = "com.gios.brightway"
     compileSdk = 35
@@ -32,7 +46,7 @@ android {
         targetSdk = 35
         // CI overwrites both from the workflow run number; see .github/workflows/build.yml
         versionCode = 1
-        versionName = "1.5.0"
+        versionName = "1.6.0"
 
         buildConfigField("String", "REPORT_TOKEN", "\"$reportToken\"")
         buildConfigField("String", "REPORT_REPO", "\"gi-os/light-reports\"")
@@ -41,12 +55,28 @@ android {
         ndk { abiFilters += "arm64-v8a" }
     }
 
+    // The release key used to sit in this repository with its password written three
+    // lines under it, so anyone at all could build an APK that Android would accept as
+    // an update to this one. It is a CI secret now: the workflow decodes it to
+    // keystore/brightway.jks, and that path is gitignored so a local checkout cannot
+    // commit it back.
+    //
+    // A build without the secret still compiles and still produces an APK. It is simply
+    // not signed with the release key and will not install over one — which is the right
+    // failure. A build that announces it is not the real thing beats one that quietly
+    // is not.
+    val keystoreFile = rootProject.file("keystore/brightway.jks")
+    val keystorePassword: String = System.getenv("KEYSTORE_PASSWORD") ?: ""
+    val canSignRelease = keystoreFile.exists() && keystorePassword.isNotEmpty()
+
     signingConfigs {
-        getByName("debug") {
-            storeFile = file("../keystore/brightway.jks")
-            storePassword = "brightway"
-            keyAlias = "brightway"
-            keyPassword = "brightway"
+        if (canSignRelease) {
+            create("release") {
+                storeFile = keystoreFile
+                storePassword = keystorePassword
+                keyAlias = "brightway"
+                keyPassword = keystorePassword
+            }
         }
     }
 
@@ -55,8 +85,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Same committed key as debug, so either APK upgrades over the other.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (canSignRelease) signingConfigs.getByName("release") else null
         }
     }
     compileOptions {
