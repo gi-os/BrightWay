@@ -51,8 +51,6 @@ nothing runs in the background after you leave the app.
 
 ## Bright\*
 
-*Turn-by-turn directions on a greyscale panel with no map tiles, no Play Services and no account — you bring your own key.*
-
 26 open-source apps for the **Light Phone III** — camera, music, maps, messages,
 reading, transit, games. The phone has no app store, so they install by sideload: scan one
 code from **[brightmarket.gzl.dev](https://brightmarket.gzl.dev)** and BrightMarket keeps them updated.
