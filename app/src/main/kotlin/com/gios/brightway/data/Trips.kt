@@ -34,9 +34,13 @@ data class Trip(
     val mode: String,
     val name: String,
     val address: String,
-    /** What the route was predicted to take, in seconds. */
-    val plannedS: Int,
-    val distanceM: Int,
+    /**
+     * What the route was predicted to take, in seconds, and how far — both as the Routes API
+     * hands them over. Narrowing a duration to an Int here would be inventing a precision
+     * nobody asked for and losing one nobody would notice until a very long walk.
+     */
+    val plannedS: Long,
+    val distanceM: Double,
     /**
      * Whether the last step was reached before navigation ended.
      *
@@ -66,8 +70,8 @@ data class Trip(
             mode = o.optString("mode"),
             name = o.optString("name"),
             address = o.optString("address"),
-            plannedS = o.optInt("plannedS"),
-            distanceM = o.optInt("distanceM"),
+            plannedS = o.optLong("plannedS"),
+            distanceM = o.optDouble("distanceM"),
             arrived = o.optBoolean("arrived"),
         )
     }
@@ -90,7 +94,7 @@ class Trips(context: Context) {
      * route without ending the last one is a change of mind, and a change of mind at 2:14 is still
      * the fact that you were going somewhere at 2:14.
      */
-    fun start(place: Place, mode: String, plannedS: Int, distanceM: Int, now: Long) {
+    fun start(place: Place, mode: String, plannedS: Long, distanceM: Double, now: Long) {
         val open = all().firstOrNull()?.takeIf { it.endedMs == 0L }
         val rest = if (open != null) listOf(open.copy(endedMs = now)) + all().drop(1) else all()
         val trip = Trip(
