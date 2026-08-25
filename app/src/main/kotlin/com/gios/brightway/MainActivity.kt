@@ -1,6 +1,7 @@
 package com.gios.brightway
 
 import android.Manifest
+import android.content.Intent
 import android.os.Bundle
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
@@ -17,6 +18,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -63,8 +65,19 @@ class MainActivity : ComponentActivity() {
         return super.dispatchKeyEvent(event)
     }
 
+    /**
+     * A place handed over by another app, waiting for the view model to exist.
+     *
+     * `onCreate` runs before the composition that creates the view model, and `onNewIntent` can
+     * arrive while this app is already up — so the request is parked here and picked up by an
+     * effect inside the composition. Held rather than applied twice: a search fired again on every
+     * recomposition would spend a Places call each time.
+     */
+    private var handoff by mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handoff = Handoff.queryFrom(intent)
         LightReport.install(
             context = this,
             appName = "BrightWay",
@@ -80,6 +93,16 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /**
+     * `singleTask`, so a second handover arrives here rather than on a new instance. Without this
+     * every calendar entry tapped would leave another copy of the app on the back stack.
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        Handoff.queryFrom(intent)?.let { handoff = it }
     }
 
     @Composable
@@ -107,6 +130,18 @@ class MainActivity : ComponentActivity() {
                 setBeepEnabled(false)
                 setOrientationLocked(true)
             })
+        }
+
+        // Somewhere handed over by another app: put it in the box and search it. Searched rather
+        // than routed on purpose — a calendar's location is a string somebody typed, and walking a
+        // stranger somewhere on the strength of it is worse than one extra press. See [Handoff].
+        val pending = handoff
+        LaunchedEffect(pending) {
+            val words = pending ?: return@LaunchedEffect
+            handoff = null
+            tab = 0
+            vm.query.value = words
+            vm.search()
         }
 
         // Errors surface as a one-line toast-equivalent; keep it plain.

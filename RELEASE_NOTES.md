@@ -1,3 +1,29 @@
+## BrightWay v1.5 — somewhere to hand a place to
+
+**Another app can now say "go here".** BrightWay had no intent surface at all: one activity, one
+MAIN/LAUNCHER filter, and no way for anything on the phone to hand it a destination. So a calendar
+entry with an address on it — the thing every other phone lets you tap to start navigating — had
+nothing to tap *to*.
+
+Three shapes are understood, all of them landing in the search box:
+
+```
+brightway://go?q=Regal+Union+Square    ours, used by BrightNotebook
+geo:0,0?q=350+5th+Ave                  the standard one, from anything on the phone
+geo:40.748,-73.985                     coordinates, searched as text
+```
+
+**Searched, never routed.** A calendar's location is a string somebody typed — "Regal Union
+Square", "moms", half an address — and starting a route off it would mean walking somebody
+somewhere on the strength of a guess. The results list, with what it matched and the address it
+matched to, is one extra press and no wrong turns.
+
+Two details worth knowing. `geo:` is an *opaque* URI, so `getQueryParameter` returns nothing and
+the query has to be split by hand — and decoded by hand, because an address with a comma in it
+arrives percent-encoded and "350 5th Ave%2C New York" on screen looks like this app mangled it.
+And the activity is `singleTask` now, so a second handover reuses the app that is already open
+instead of stacking another copy of it behind the first.
+
 ## BrightWay v1.4 — see where it is before you go
 
 - **Search results open on a map.** Tapping a result now shows the place pinned on a

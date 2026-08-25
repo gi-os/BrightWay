@@ -31,12 +31,44 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:icon="@mipmap/ic_launcher"
             android:label="Directions"
             android:theme="@style/Theme.BrightWay">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!--
+              Somewhere to go, handed over by another app. BrightNotebook is the one that asked:
+              a calendar entry with an address on it should be one tap from directions, the way it
+              is on every other phone, and on this one there was nothing to tap *to*.
+
+              Two ways in, because a location arrives in two shapes and only one of them is ours:
+
+                brightway://go?q=<text>   — our own, and the one a sibling app uses.
+                geo:0,0?q=<text>          — the standard one, so anything on the phone that knows
+                geo:<lat>,<lon>             how to ask for a map can ask this app. Coordinates are
+                                            accepted and searched as text, which the Places API
+                                            handles and which keeps one path through the app.
+
+              Both land on the search results rather than starting a route. A calendar's location
+              is a string somebody typed — "Regal Union Square", "moms" — and routing straight off
+              it would mean walking a stranger somewhere on the strength of a guess. Showing what
+              it matched, with the address, is one extra press and no wrong turns.
+            -->
+            <intent-filter android:label="Directions">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="brightway" android:host="go" />
+            </intent-filter>
+
+            <intent-filter android:label="Directions">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="geo" />
             </intent-filter>
         </activity>
     </application>
