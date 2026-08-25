@@ -261,7 +261,6 @@ fun NavCompass(vm: WayViewModel, route: RouteOption, fix: Location?, currentStep
             return@Column
         }
 
-        val az = if (heading.azimuthDeg.isNaN()) 0f else heading.azimuthDeg
         val bearing = Geo.bearingDeg(fix.latitude, fix.longitude, targetLat, targetLon)
         val dist = Geo.distanceM(fix.latitude, fix.longitude, targetLat, targetLon)
 
@@ -278,7 +277,7 @@ fun NavCompass(vm: WayViewModel, route: RouteOption, fix: Location?, currentStep
             modifier = Modifier.padding(top = 2.dp),
         )
         Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-            CompassFace(bearing.toFloat(), az, Modifier.size(230.dp))
+            CompassView(bearing.toFloat(), heading, Modifier.size(230.dp))
         }
         Text(Geo.prettyDistance(dist), style = MaterialTheme.typography.displaySmall,
             color = Color.White)

@@ -44,14 +44,13 @@ fun CompassScreen(vm: WayViewModel) {
         }
         val bearing = Geo.bearingDeg(fix!!.latitude, fix!!.longitude, dest.lat, dest.lon)
         val dist = Geo.distanceM(fix!!.latitude, fix!!.longitude, dest.lat, dest.lon)
-        val az = if (heading.azimuthDeg.isNaN()) 0f else heading.azimuthDeg
 
         Text(dest.name, style = MaterialTheme.typography.titleMedium, color = Color.White,
             textAlign = TextAlign.Center, modifier = Modifier.padding(top = 12.dp))
         Text("as the crow flies", style = MaterialTheme.typography.bodyMedium, color = Faint,
             modifier = Modifier.padding(top = 2.dp))
         Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-            CompassFace(bearing.toFloat(), az, Modifier.size(240.dp))
+            CompassView(bearing.toFloat(), heading, Modifier.size(240.dp))
         }
         Text(Geo.prettyDistance(dist), style = MaterialTheme.typography.displaySmall,
             color = Color.White)

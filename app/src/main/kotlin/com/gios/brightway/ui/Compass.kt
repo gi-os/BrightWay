@@ -8,9 +8,21 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.location.Location
 import android.os.SystemClock
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,17 +35,24 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import com.gios.light.common.theme.Dim
 import com.gios.light.common.theme.Faint
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.exp
 import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlinx.coroutines.delay
@@ -70,9 +89,61 @@ class HeadingState internal constructor() {
     var interference by mutableStateOf(false)
         internal set
 
+    /** A figure 8 has been waved and the sensor has since said it is sure. */
+    var trusted by mutableStateOf(false)
+        internal set
+
+    /** How much of the figure 8 has been seen, 0f..1f. */
+    var wavedFraction by mutableFloatStateOf(0f)
+        internal set
+
+    /** The figure 8 has been done at least once since the last time the HAL gave up. */
+    var waved by mutableStateOf(false)
+        internal set
+
     val fromGps: Boolean get() = !gpsCourse.isNaN()
 
     val azimuthDeg: Float get() = if (fromGps) gpsCourse else sensorAzimuth
+
+    // --- Smoothing -------------------------------------------------------------------
+    //
+    // Averaged as a unit vector rather than a number, because degrees do not average:
+    // 359 and 1 are two degrees apart and their mean is 180. One exponential filter with
+    // a time constant in seconds, so the smoothing is the same however fast the HAL
+    // decides to deliver samples, and a snap for real movement — a 90 degree step
+    // between two samples is a turn, not noise, and dragging the needle through it is
+    // the lag itself.
+    private var sx = 0f
+    private var sy = 0f
+    private var lastNs = 0L
+
+    internal fun pushSensorAzimuth(deg: Float, timestampNs: Long) {
+        val rad = Math.toRadians(deg.toDouble())
+        val x = sin(rad).toFloat()
+        val y = cos(rad).toFloat()
+        val first = lastNs == 0L
+        val dt = if (first) 0f else ((timestampNs - lastNs) / 1e9f).coerceIn(0f, 0.25f)
+        lastNs = timestampNs
+        val jump = !first && abs(shortestDelta(sensorAzimuth, deg)) > SNAP_DEG
+        val alpha = if (first || jump || dt <= 0f) 1f else 1f - exp(-dt / TAU_S)
+        sx += (x - sx) * alpha
+        sy += (y - sy) * alpha
+        sensorAzimuth =
+            ((Math.toDegrees(atan2(sx.toDouble(), sy.toDouble())) % 360.0 + 360.0) % 360.0)
+                .toFloat()
+    }
+
+    private companion object {
+        /** 90 ms: the jitter goes, a head turn does not. */
+        const val TAU_S = 0.09f
+        const val SNAP_DEG = 75f
+    }
+}
+
+/** Signed degrees from [from] to [to], -180..180. */
+internal fun shortestDelta(from: Float, to: Float): Float {
+    if (from.isNaN()) return 0f
+    return ((to - from) % 360f + 540f) % 360f - 180f
 }
 
 @Composable
@@ -131,10 +202,14 @@ fun rememberHeading(fix: Location?): HeadingState {
                             )
                             SensorManager.getOrientation(r2, o)
                         }
-                        state.sensorAzimuth =
+                        val deg =
                             (((Math.toDegrees(o[0].toDouble()) + declination) % 360.0 + 360.0) % 360.0)
                                 .toFloat()
-                        if (e.accuracy in 0..3) state.accuracy = e.accuracy
+                        state.pushSensorAzimuth(deg, e.timestamp)
+                        if (e.accuracy in 0..3) {
+                            state.accuracy = e.accuracy
+                            CompassCalibration.onAccuracy(e.accuracy)
+                        }
                     }
                     Sensor.TYPE_MAGNETIC_FIELD -> {
                         val m = sqrt(
@@ -147,25 +222,73 @@ fun rememberHeading(fix: Location?): HeadingState {
                 }
             }
             override fun onAccuracyChanged(s: Sensor?, a: Int) {
-                if (s?.type == Sensor.TYPE_ROTATION_VECTOR) state.accuracy = a
+                if (s?.type == Sensor.TYPE_ROTATION_VECTOR) {
+                    state.accuracy = a
+                    CompassCalibration.onAccuracy(a)
+                }
             }
         }
-        if (rotation != null) sm.registerListener(listener, rotation, SensorManager.SENSOR_DELAY_UI)
+        // GAME, not UI: 50 Hz in gives the filter above something to work with. UI's 16 Hz
+        // was half of the old lag on its own — nothing to smooth, so nothing arrived early.
+        if (rotation != null) sm.registerListener(listener, rotation, SensorManager.SENSOR_DELAY_GAME)
         if (magnet != null) sm.registerListener(listener, magnet, SensorManager.SENSOR_DELAY_UI)
         onDispose { sm.unregisterListener(listener) }
     }
+
+    // The gate. GPS course is a track over the ground and owes the magnetometer nothing,
+    // so it is never held back; a phone with no gyroscope cannot be asked for a gesture
+    // nobody can see. Everything else waits for the wave AND for the sensor to say it is
+    // sure afterwards, which is the whole point: the wave without the confirmation is
+    // just as wrong as before, quietly.
+    val wave = rememberFigure8()
+    state.wavedFraction = wave.progress
+    state.waved = wave.waved || !wave.detectable
+    state.trusted = state.fromGps ||
+        !wave.detectable ||
+        (wave.waved && state.accuracy >= 3 && !state.interference)
+
     return state
 }
 
-/** Animate an angle the short way round — 359° → 1° must not spin the needle backwards. */
+/**
+ * Animate an angle the short way round — 359 to 1 must not spin the needle backwards.
+ *
+ * This used to be `tween(250)`, retargeted on every sensor sample. A tween restarts from
+ * zero velocity each time it is given a new target, so at 50 Hz the needle only ever
+ * travelled the flat opening of the easing curve and then got a fresh curve: it trailed
+ * the phone by most of a second and never caught up while turning. A spring keeps its
+ * velocity across retargets, which is what a continuously moving target needs.
+ *
+ * The unwrap is now guarded on the raw value. It mutates state from composition, and a
+ * composition that runs twice with the same target used to integrate the same step twice
+ * and walk the needle off true.
+ */
 @Composable
 private fun animateAngle(target: Float): Float {
-    val cont = remember { floatArrayOf(target) }
-    val unwrapped = remember(target) {
-        cont[0] += ((target - cont[0]) % 360f + 540f) % 360f - 180f
-        cont[0]
+    val acc = remember { AngleUnwrapper() }
+    val unwrapped = remember(target) { acc.unwrap(target) }
+    return animateFloatAsState(
+        unwrapped,
+        spring(dampingRatio = 1f, stiffness = 1200f, visibilityThreshold = 0.05f),
+        label = "angle",
+    ).value
+}
+
+/** Turns a 0..360 sequence into a continuous one. Idempotent for a repeated value. */
+private class AngleUnwrapper {
+    private var last = Float.NaN
+    private var continuous = 0f
+
+    fun unwrap(target: Float): Float {
+        if (last.isNaN()) {
+            last = target
+            continuous = target
+        } else if (target != last) {
+            continuous += shortestDelta(last, target)
+            last = target
+        }
+        return continuous
     }
-    return animateFloatAsState(unwrapped, tween(250), label = "angle").value
 }
 
 /**
@@ -228,6 +351,101 @@ fun CompassFace(bearingDeg: Float, headingDeg: Float, modifier: Modifier = Modif
 }
 
 /**
+ * The compass, or the reason it is not being shown yet.
+ *
+ * Every caller wants the same rule and none of them should have to write it: a face that
+ * opens pointing at a wall — stale hard-iron calibration, reported by the HAL as high
+ * confidence — is worse than no face, because a wrong arrow gets followed. So the arrow
+ * is withheld until the phone has been waved in a figure 8 AND the sensor says it is
+ * sure of itself afterwards. Walking skips all of it: GPS course is a track, not a field
+ * reading. See [rememberHeading] for the gate and [Figure8Detector] for the gesture.
+ */
+@Composable
+fun CompassView(
+    bearingDeg: Float,
+    heading: HeadingState,
+    modifier: Modifier = Modifier,
+) {
+    if (heading.trusted) {
+        val az = if (heading.azimuthDeg.isNaN()) 0f else heading.azimuthDeg
+        CompassFace(bearingDeg, az, modifier)
+    } else {
+        Figure8Prompt(heading, modifier)
+    }
+}
+
+/**
+ * The waiting room: an 8 to copy, filling in as the wave is recognised. Same footprint as
+ * the face so nothing jumps when the compass appears.
+ */
+@Composable
+private fun Figure8Prompt(heading: HeadingState, modifier: Modifier = Modifier) {
+    val settling = heading.waved && heading.wavedFraction <= 0f
+    val phase by rememberInfiniteTransition(label = "eight").animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(2600, easing = LinearEasing), RepeatMode.Restart),
+        label = "phase",
+    )
+    val traced = animateFloatAsState(heading.wavedFraction, tween(180), label = "traced").value
+
+    Column(
+        modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Box(Modifier.size(150.dp)) {
+            Canvas(Modifier.size(150.dp)) {
+                val w = size.width * 0.34f
+                val h = size.height * 0.40f
+                val c = center
+                fun at(t: Float): Offset {
+                    val a = t * 2f * Math.PI.toFloat()
+                    return Offset(c.x + sin(2f * a) * w * 0.5f, c.y - cos(a) * h)
+                }
+                fun path(from: Float, to: Float): Path = Path().apply {
+                    val steps = 96
+                    for (i in 0..steps) {
+                        val o = at(from + (to - from) * i / steps)
+                        if (i == 0) moveTo(o.x, o.y) else lineTo(o.x, o.y)
+                    }
+                }
+                drawPath(path(0f, 1f), Color(0xFF2E2E2E), style = Stroke(6f, cap = StrokeCap.Round))
+                if (traced > 0.01f) {
+                    drawPath(
+                        path(0f, traced),
+                        Color.White,
+                        style = Stroke(6f, cap = StrokeCap.Round),
+                    )
+                }
+                // The demonstration: a dot walking the 8 while nothing else is happening.
+                if (traced <= 0.01f && !settling) {
+                    drawCircle(Color.White, size.minDimension * 0.035f, at(phase))
+                }
+            }
+        }
+        Text(
+            if (settling) "hold still — settling" else "wave the phone in a figure 8",
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.White,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 18.dp, start = 24.dp, end = 24.dp),
+        )
+        Text(
+            if (heading.interference) {
+                "and step away from the metal"
+            } else {
+                "the compass shows up once it is sure"
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = Faint,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(top = 6.dp, start = 24.dp, end = 24.dp),
+        )
+    }
+}
+
+/**
  * Where the heading is coming from and whether to believe it, as one quiet line.
  * Priority: GPS course (best) → interference warning (urgent) → the HAL's own confidence.
  */
@@ -236,11 +454,12 @@ fun AccuracyLabel(heading: HeadingState, modifier: Modifier = Modifier) {
     val (label, col) = when {
         heading.fromGps -> "heading from GPS" to Color.White
         heading.interference -> "magnetic interference — move from metal" to Faint
+        !heading.waved -> "not calibrated — wave phone in a figure 8" to Faint
         else -> when (heading.accuracy) {
             3 -> "compass ok · walk for GPS heading" to Dim
-            2 -> "medium confidence" to Dim
-            1 -> "low — wave phone in a figure 8" to Faint
-            0 -> "unreliable — wave phone in a figure 8" to Faint
+            2 -> "still settling after the figure 8" to Faint
+            1 -> "low — wave phone in a figure 8 again" to Faint
+            0 -> "unreliable — wave phone in a figure 8 again" to Faint
             else -> "calibrating…" to Faint
         }
     }
