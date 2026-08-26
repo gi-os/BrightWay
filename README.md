@@ -1,3 +1,5 @@
+<img src="docs/icon.png" alt="" width="72" align="left" />
+
 # BrightWay
 
 Walking and subway directions for the Light Phone III. Text-first: one big instruction,
