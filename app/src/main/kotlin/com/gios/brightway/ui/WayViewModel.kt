@@ -17,7 +17,8 @@ import kotlinx.coroutines.launch
 
 class WayViewModel(app: Application) : AndroidViewModel(app) {
     val store = Store(app)
-    val locator = Locator(app)
+    /** The process-wide location loop; the UI and NavService hold leases on the same one. */
+    val locator = Locator.get(app)
     private val maps = GoogleMaps { store.apiKey }
     val staticMap = StaticMap { store.apiKey }
 
@@ -110,17 +111,6 @@ class WayViewModel(app: Application) : AndroidViewModel(app) {
                 now = System.currentTimeMillis(),
             )
         }
-    }
-
-    /**
-     * Navigation ended, at whichever step it had reached.
-     *
-     * [arrived] is the caller's answer rather than this object's, because the only thing that knows
-     * whether the last step was reached is the screen counting them — and ending navigation and
-     * abandoning it are the same gesture in this app.
-     */
-    fun finishTrip(arrived: Boolean) {
-        runCatching { trips.finish(arrived, System.currentTimeMillis()) }
     }
 
     private fun message(t: Throwable): String = when (t) {

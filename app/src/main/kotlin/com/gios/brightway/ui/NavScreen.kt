@@ -1,6 +1,11 @@
 package com.gios.brightway.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.location.Location
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -23,7 +28,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -35,8 +39,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.gios.brightway.nav.NavService
+import com.gios.brightway.nav.NavSession
 import com.gios.brightway.net.RouteOption
 import com.gios.brightway.net.Step
+import com.gios.brightway.share.NavProvider
 import com.gios.brightway.util.ColorMode
 import com.gios.brightway.util.Geo
 import com.gios.light.common.hw.LocalWheelBus
@@ -57,17 +66,48 @@ private fun glyph(maneuver: String): String = when {
  * Turn-by-turn. One big instruction, the live distance to it, and the rest of the trip
  * under a rule — the wheel scrolls the list. The current step advances itself when the
  * fix comes within 20 m of the step's end, so the phone can stay in a pocket between turns.
+ *
+ * Since the pocket is the point, this screen no longer owns the trip: [NavService] runs
+ * the location loop and the step advance for as long as the trip lasts, screen on or off,
+ * and this screen draws whatever [NavSession] says. Coming back to a trip already in
+ * progress recomposes onto the right step because the step was never this screen's to lose.
  */
 @Composable
 fun NavScreen(vm: WayViewModel, onDone: () -> Unit) {
     val route = vm.chosen.collectAsState().value ?: run { onDone(); return }
     val fix by vm.locator.fix.collectAsState()
     val context = LocalContext.current
-    var stepIndex by remember { mutableIntStateOf(0) }
     // Three-way toggle: steps → map → compass → steps ...
     var viewMode by remember { mutableStateOf("steps") }
     val listState = rememberLazyListState()
     val steps = route.steps
+
+    // The service owns the trip; this screen only asks for it and draws it. Started from
+    // here — always foreground, so startForegroundService never hits the background wall.
+    // The notification permission (API 33+) is asked once, on the first trip: without it
+    // navigation still runs, there is simply no "tap to return" line in the shade.
+    val askNotify = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { }
+    LaunchedEffect(route) {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            askNotify.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        NavService.start(context, route, vm.destination.value)
+    }
+
+    // Draw from the session while it lives, and from its last words after it ends —
+    // arrival stops the service and clears the session, but the screen should keep
+    // showing the arrived state rather than snapping back to step one.
+    val live by NavSession.state.collectAsState()
+    var lastState by remember { mutableStateOf(live) }
+    if (live != null) lastState = live
+    val session = live ?: lastState
+    val stepIndex = session?.stepIndex ?: 0
+    val navActive = live != null
 
     // The wheel drives the step list: a notch past the last row advances to the next
     // step (so a spinning wheel walks you through the turns without reaching for the
@@ -78,8 +118,8 @@ fun NavScreen(vm: WayViewModel, onDone: () -> Unit) {
         val latestIndex by rememberUpdatedState(stepIndex)
         LaunchedEffect(bus) {
             bus.notches.collect { n ->
-                val target = if (n > 0) latestIndex + 1 else latestIndex - 1
-                stepIndex = target.coerceIn(0, steps.lastIndex.coerceAtLeast(0))
+                NavSession.setStep(if (n > 0) latestIndex + 1 else latestIndex - 1)
+                NavProvider.announce(context)
             }
         }
         LaunchedEffect(stepIndex) {
@@ -94,30 +134,22 @@ fun NavScreen(vm: WayViewModel, onDone: () -> Unit) {
         onDispose { if (vm.store.colorNav) ColorMode.setColor(context, false) }
     }
 
-    // The trip is closed when this screen goes, whichever way it went — the END row, the back
-    // gesture, or the app being killed and disposing on the way out. `arrived` is read from a box
-    // rather than from `stepIndex` directly: `onDispose` captures the value it was composed with,
-    // and the whole question is what the last step was doing at the moment of leaving.
-    val reachedLast = remember { mutableStateOf(false) }
-    reachedLast.value = stepIndex >= route.steps.lastIndex && route.steps.isNotEmpty()
+    // Leaving this screen on purpose — the END row or the back gesture — ends the trip,
+    // and the service closes the journey-log entry on its way down. Leaving it because the
+    // system reclaimed the activity is not the same gesture at all: the lifecycle is
+    // already dead by then, and the service navigates on for the pocket the phone is in.
+    val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(Unit) {
-        onDispose { vm.finishTrip(reachedLast.value) }
+        onDispose {
+            if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                NavService.stop(context)
+            }
+        }
     }
 
     val current = steps.getOrNull(stepIndex)
-
-    // Distance from the live fix to the end of the current step; arrival advances it.
-    // Done in an effect, not inline: mutating stepIndex during composition can advance
-    // the same step twice in one frame (which is how "first step, then the first step
-    // again" used to happen). Keyed on the step so each advance is a one-shot.
-    val distToNext = fix?.let { f ->
-        current?.let { Geo.distanceM(f.latitude, f.longitude, it.endLat, it.endLon) }
-    }
-    LaunchedEffect(stepIndex, distToNext) {
-        if (distToNext != null && distToNext < 20 && stepIndex < steps.lastIndex) {
-            stepIndex += 1
-        }
-    }
+    // Live metres to the current step's end — the service's measurement, not a second one.
+    val distToNext = session?.distToNextM
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -175,10 +207,15 @@ fun NavScreen(vm: WayViewModel, onDone: () -> Unit) {
                     Text(current.instruction,
                         style = MaterialTheme.typography.titleLarge, color = Color.White)
                 }
+                val arrived = !navActive && steps.isNotEmpty() && stepIndex >= steps.lastIndex
                 Text(
-                    distToNext?.let { Geo.prettyDistance(it) } ?: "waiting for GPS…",
+                    when {
+                        arrived -> "arrived"
+                        distToNext != null -> Geo.prettyDistance(distToNext)
+                        else -> "waiting for GPS…"
+                    },
                     style = MaterialTheme.typography.displaySmall,
-                    color = if (distToNext == null) Faint else Color.White,
+                    color = if (distToNext == null && !arrived) Faint else Color.White,
                     modifier = Modifier.padding(top = 12.dp),
                 )
             }

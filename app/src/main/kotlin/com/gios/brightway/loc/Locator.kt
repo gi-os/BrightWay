@@ -11,18 +11,39 @@ import kotlinx.coroutines.flow.StateFlow
 /**
  * Plain LocationManager — there is no Play Services on LightOS, so FusedLocationProvider
  * does not exist here. GPS with a network-provider warm start, exposed as a StateFlow.
- * Callers own start/stop from their lifecycle; leaving GPS running with the screen off is
- * how LightFog earned its battery memory.
+ *
+ * One instance per process, and one subscription under it, by construction. The UI holds a
+ * lease while it is up and [com.gios.brightway.nav.NavService] holds one for the length of a
+ * trip; the underlying updates run while anybody holds any lease and stop when the last one
+ * is released. Leases exist because the alternative — two callers each owning start/stop —
+ * is two subscribers tearing each other down: the activity being destroyed used to be able
+ * to switch off the GPS underneath whatever else still needed it. Leaving GPS running with
+ * no lease holder is how LightFog earned its battery memory, so release is not optional.
  */
-class Locator(context: Context) {
+class Locator private constructor(context: Context) {
     private val lm = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
     private val _fix = MutableStateFlow<Location?>(null)
     val fix: StateFlow<Location?> = _fix
 
     private val listener = LocationListener { l -> _fix.value = l }
+    private val leases = mutableSetOf<String>()
+
+    /** Start the updates if this is the first lease; idempotent per owner. */
+    @Synchronized
+    fun acquire(owner: String) {
+        val wasEmpty = leases.isEmpty()
+        leases += owner
+        if (wasEmpty) start()
+    }
+
+    /** Stop the updates when the last lease goes. Releasing what you don't hold is a no-op. */
+    @Synchronized
+    fun release(owner: String) {
+        if (leases.remove(owner) && leases.isEmpty()) stop()
+    }
 
     @SuppressLint("MissingPermission")
-    fun start() {
+    private fun start() {
         runCatching {
             // Whatever is cached is better than a blank screen while GPS warms up.
             val last = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
@@ -37,5 +58,14 @@ class Locator(context: Context) {
         }
     }
 
-    fun stop() = runCatching { lm.removeUpdates(listener) }.let { }
+    private fun stop() = runCatching { lm.removeUpdates(listener) }.let { }
+
+    companion object {
+        @Volatile private var instance: Locator? = null
+
+        fun get(context: Context): Locator =
+            instance ?: synchronized(this) {
+                instance ?: Locator(context.applicationContext).also { instance = it }
+            }
+    }
 }

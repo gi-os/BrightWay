@@ -26,6 +26,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.gios.brightway.nav.NavSession
 import com.gios.brightway.ui.CompassScreen
 import com.gios.brightway.ui.HomeScreen
 import com.gios.brightway.ui.NavScreen
@@ -112,13 +113,26 @@ class MainActivity : ComponentActivity() {
 
         val askLocation = rememberLauncherForActivityResult(
             ActivityResultContracts.RequestPermission(),
-        ) { granted -> if (granted) vm.locator.start() }
+        ) { granted -> if (granted) vm.locator.acquire("ui") }
         LaunchedEffect(Unit) {
             if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) ==
                 android.content.pm.PackageManager.PERMISSION_GRANTED
-            ) vm.locator.start() else askLocation.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            ) vm.locator.acquire("ui") else askLocation.launch(Manifest.permission.ACCESS_FINE_LOCATION)
         }
-        DisposableEffect(Unit) { onDispose { vm.locator.stop() } }
+        DisposableEffect(Unit) { onDispose { vm.locator.release("ui") } }
+
+        // A trip that outlived its UI. NavService keeps navigating with the screen off, and if
+        // the system reclaimed this activity in the meantime the view model came back empty —
+        // so the session, which the service kept, refills it and the app reopens on the trip
+        // rather than on a search box that has forgotten where you were going.
+        LaunchedEffect(Unit) {
+            val session = NavSession.state.value
+            if (session != null && vm.chosen.value == null) {
+                vm.destination.value = session.destination
+                vm.chosen.value = session.route
+                nav.navigate("nav")
+            }
+        }
 
         val scanQr = rememberLauncherForActivityResult(ScanContract()) { result ->
             result.contents?.let { vm.setApiKey(it) }

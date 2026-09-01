@@ -11,7 +11,10 @@ you bring your own Google Maps Platform key.
 - **GO** — search anywhere (Places), get one walking route and up to three subway/bus
   itineraries (Routes API). Pick one; the nav screen shows the current turn huge, the live
   GPS distance to it, and auto-advances as you walk. Transit steps show the bullet, the
-  headsign, stop count and exit stop.
+  headsign, stop count and exit stop. The trip survives the screen turning off — pocket the
+  phone between turns and the step keeps advancing — and while navigating, the current turn
+  is published at `content://com.gios.brightway.nav/current` for BrightControl's lock face
+  to draw.
 - **PLACE MAP** — search results open pinned on a map first: wheel to zoom, GO to route.
 - **COMPASS** — bearing + distance to your destination, as the crow flies (true-north
   corrected). During nav, toggle it between the next turn and the destination. Works with no
@@ -45,8 +48,11 @@ Skip the grant and everything works in greyscale.
 Grab the APK from the latest release (or point Obtainium at this repo). Every push to
 `main` cuts a signed release; the certificate is pinned in `signing-fingerprint.txt`.
 
-Location permission is asked on first launch — GPS only, plain `LocationManager`,
-nothing runs in the background after you leave the app.
+Location permission is asked on first launch — GPS only, plain `LocationManager`.
+Nothing runs in the background after you leave the app, with one scoped exception:
+while a trip is running, a foreground service keeps navigation alive so the screen can
+turn off, and it stops itself on arrival, on END, or after four hours flat. Its
+notification is a single silent "Navigating · tap to return" line.
 
 <!-- bright-footer:begin -->
 ---

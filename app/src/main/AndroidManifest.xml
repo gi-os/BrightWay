@@ -8,6 +8,18 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!--
+        Navigation with the screen off. NavService is a foreground service with the
+        `location` type, alive strictly between "route chosen" and "arrived / END / 4 h
+        cap" — see nav/NavService.kt for why those boundaries are hard ones. No
+        ACCESS_BACKGROUND_LOCATION: the service starts in the foreground and the FGS type
+        keeps while-in-use access for exactly as long as the trip runs.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <!-- The FGS notification on API 33+. Denied, navigation still runs — the shade line
+         "tap to return" is the only thing missing. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!--
         Colour during navigation. LightOS's black-and-white is a SurfaceFlinger colour
         matrix pinned by accessibility_display_daltonizer_enabled; flipping it needs this
         signature|privileged|development permission, granted once over adb:
@@ -81,6 +93,25 @@
             android:name=".share.TripsProvider"
             android:authorities="com.gios.brightway.trips"
             android:exported="true" />
+
+        <!--
+          Where you're going right now, for BrightControl's lock face. One row while
+          navigating, empty otherwise; same terms as the trips bridge — exported, no
+          permission, read-only. See share/NavProvider.kt for the pinned column contract.
+        -->
+        <provider
+            android:name=".share.NavProvider"
+            android:authorities="com.gios.brightway.nav"
+            android:exported="true" />
+
+        <!--
+          The trip itself, once the screen is allowed to turn off. Route-scoped by design:
+          started when a route is chosen, gone on arrival, END, or the four-hour cap.
+        -->
+        <service
+            android:name=".nav.NavService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
 
     </application>
 </manifest>
