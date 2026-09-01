@@ -126,4 +126,8 @@ dependencies {
 
     // Geo math is pure Kotlin with no Android imports, so it runs here.
     testImplementation("junit:junit:4.13.2")
+    // org.json ships inside Android; the unit-test environment stubs it (every method
+    // throws "not mocked"). Pull the real artifact so DuplicateStepTest can exercise
+    // parseRoute on the JVM.
+    testImplementation("org.json:json:20240303")
 }
