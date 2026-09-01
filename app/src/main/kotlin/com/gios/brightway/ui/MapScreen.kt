@@ -30,11 +30,16 @@ import com.gios.light.common.hw.LocalWheelBus
 import com.gios.light.common.theme.Dim
 import com.gios.light.common.theme.Faint
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 
 /**
  * The route on a map. Wheel-driven: turning zooms; the first notch drops out of the
  * whole-route overview into follow mode centred on the GPS fix, and zooming past the
  * bottom returns to overview. One Static Maps GET per (zoom, ~50 m of movement), cached.
+ *
+ * The map also re-fetches every 10 s with the current fix, so the user marker keeps
+ * tracking you even when you're not crossing a rounding bucket — the cache makes a
+ * motionless refetch a no-op.
  *
  * When a fetch fails the reason is shown and tappable to retry — never a spinner that
  * lies forever.
@@ -48,6 +53,16 @@ fun MapView(vm: WayViewModel, route: RouteOption) {
     var bmp by remember { mutableStateOf<Bitmap?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var retry by remember { mutableIntStateOf(0) }
+    var tick by remember { mutableIntStateOf(0) }
+
+    // A 10 s heartbeat: in follow mode it recentres on the live fix; in overview it just
+    // bumps the key so the refetch re-runs (and hits the cache for the same URL).
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(10_000)
+            tick += 1
+        }
+    }
 
     val bus = LocalWheelBus.current
     LaunchedEffect(bus) {
@@ -60,11 +75,12 @@ fun MapView(vm: WayViewModel, route: RouteOption) {
         }
     }
 
-    // Re-fetch on zoom change, or in follow mode when the fix moves ~50 m (rounding the
-    // coordinate to ~5e-4 deg buckets throttles a 1 Hz GPS stream to a handful of GETs).
+    // Re-fetch on zoom change, on the 10 s heartbeat, or in follow mode when the fix
+    // moves ~50 m (rounding the coordinate to ~5e-4 deg buckets throttles a 1 Hz GPS
+    // stream to a handful of GETs).
     val latBucket = fix?.latitude?.let { (it / 5e-4).roundToInt() }
     val lonBucket = fix?.longitude?.let { (it / 5e-4).roundToInt() }
-    LaunchedEffect(zoom, if (zoom != null) latBucket to lonBucket else null, retry) {
+    LaunchedEffect(zoom, tick, if (zoom != null) latBucket to lonBucket else null, retry) {
         val r = vm.staticMap.fetch(
             destLat = dest.lat, destLon = dest.lon,
             encodedPolyline = route.encodedPolyline,

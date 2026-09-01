@@ -26,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,7 +40,6 @@ import com.gios.brightway.net.Step
 import com.gios.brightway.util.ColorMode
 import com.gios.brightway.util.Geo
 import com.gios.light.common.hw.LocalWheelBus
-import com.gios.light.common.hw.WheelScroll
 import com.gios.light.common.theme.Dim
 import com.gios.light.common.theme.Faint
 
@@ -67,7 +67,25 @@ fun NavScreen(vm: WayViewModel, onDone: () -> Unit) {
     // Three-way toggle: steps → map → compass → steps ...
     var viewMode by remember { mutableStateOf("steps") }
     val listState = rememberLazyListState()
-    WheelScroll(listState, active = viewMode == "steps")
+    val steps = route.steps
+
+    // The wheel drives the step list: a notch past the last row advances to the next
+    // step (so a spinning wheel walks you through the turns without reaching for the
+    // screen), and the list follows the active step. Compass mode owns the wheel to
+    // go back; map mode owns it for zoom — those composables aren't composed here.
+    val bus = LocalWheelBus.current
+    if (bus != null && viewMode == "steps") {
+        val latestIndex by rememberUpdatedState(stepIndex)
+        LaunchedEffect(bus) {
+            bus.notches.collect { n ->
+                val target = if (n > 0) latestIndex + 1 else latestIndex - 1
+                stepIndex = target.coerceIn(0, steps.lastIndex.coerceAtLeast(0))
+            }
+        }
+        LaunchedEffect(stepIndex) {
+            if (steps.isNotEmpty()) listState.animateScrollToItem(stepIndex)
+        }
+    }
 
     // Colour while navigating, greyscale on the way out. The flip is one secure-settings
     // integer; ungranted it just returns false and the screen stays exactly as legible.
@@ -86,15 +104,19 @@ fun NavScreen(vm: WayViewModel, onDone: () -> Unit) {
         onDispose { vm.finishTrip(reachedLast.value) }
     }
 
-    val steps = route.steps
     val current = steps.getOrNull(stepIndex)
 
     // Distance from the live fix to the end of the current step; arrival advances it.
+    // Done in an effect, not inline: mutating stepIndex during composition can advance
+    // the same step twice in one frame (which is how "first step, then the first step
+    // again" used to happen). Keyed on the step so each advance is a one-shot.
     val distToNext = fix?.let { f ->
         current?.let { Geo.distanceM(f.latitude, f.longitude, it.endLat, it.endLon) }
     }
-    if (distToNext != null && distToNext < 20 && stepIndex < steps.lastIndex) {
-        stepIndex += 1
+    LaunchedEffect(stepIndex, distToNext) {
+        if (distToNext != null && distToNext < 20 && stepIndex < steps.lastIndex) {
+            stepIndex += 1
+        }
     }
 
     Column(Modifier.fillMaxSize()) {

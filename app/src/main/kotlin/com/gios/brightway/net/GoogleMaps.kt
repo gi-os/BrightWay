@@ -136,7 +136,7 @@ class GoogleMaps(private val apiKey: () -> String) {
         }
     }
 
-    private fun parseRoute(r: JSONObject, mode: String): RouteOption {
+    internal fun parseRoute(r: JSONObject, mode: String): RouteOption {
         val durationS = parseSeconds(r.optString("duration"))
         val distanceM = r.optDouble("distanceMeters", 0.0)
         val steps = mutableListOf<Step>()
@@ -151,10 +151,12 @@ class GoogleMaps(private val apiKey: () -> String) {
                 val instruction = nav?.optString("instructions").orEmpty().ifBlank {
                     transit?.let { "Take the ${it.lineName} toward ${it.headsign}" } ?: "Continue"
                 }
-                // Zero-length "continue" steps are noise between two real turns.
+                // Zero-length walking steps are navigational noise: the origin "depart" step
+                // Google prepends (same street text as the real first step — the old
+                // duplicate-first-step bug) and any bare "Continue". Transit steps always stay.
                 val dist = s.optDouble("distanceMeters", 0.0)
-                if (transit == null && dist == 0.0 && instruction == "Continue") continue
-                steps += Step(
+                if (transit == null && dist == 0.0) continue
+                val step = Step(
                     instruction = instruction,
                     maneuver = if (transit != null) "TRANSIT"
                         else nav?.optString("maneuver").orEmpty(),
@@ -164,6 +166,13 @@ class GoogleMaps(private val apiKey: () -> String) {
                     endLon = end?.optDouble("longitude") ?: 0.0,
                     transit = transit,
                 )
+                // Belt and braces: never list two consecutive walking steps with the same
+                // words (e.g. a repeated "Continue onto <street>" after a merge).
+                if (transit == null) {
+                    val prev = steps.lastOrNull()
+                    if (prev != null && prev.transit == null && prev.instruction == instruction) continue
+                }
+                steps += step
             }
         }
         val rides = steps.mapNotNull { it.transit }
