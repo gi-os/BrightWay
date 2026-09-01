@@ -30,6 +30,57 @@ object NavMath {
     fun arrived(stepIndex: Int, lastIndex: Int, distToEndM: Double): Boolean =
         lastIndex >= 0 && stepIndex >= lastIndex && distToEndM < ARRIVE_M
 
+    /** Consecutive growing fixes before the off-route question is worth asking. */
+    const val OFF_ROUTE_FIXES = 5
+
+    /** And the streak must have cost more than this many metres, or it's just GPS wander. */
+    const val OFF_ROUTE_GROWTH_M = 30.0
+
+    /**
+     * The off-route detector's whole memory, one immutable value per accepted fix.
+     *
+     * [lastM] null means unseeded — the first fix of a step only sets the baseline.
+     * [runStartM] is the distance where the current streak of increases began, so the
+     * 30 m question is "how far has this streak carried you", not "how far since ever".
+     * The default value is the reset, used verbatim by a new route or a step change.
+     */
+    data class Drift(
+        val runStartM: Double = 0.0,
+        val lastM: Double? = null,
+        val increases: Int = 0,
+        val offRoute: Boolean = false,
+    )
+
+    /**
+     * One accepted fix's distance to the current step's end, folded into [prev].
+     *
+     * Off-route trips after [OFF_ROUTE_FIXES] consecutive fixes that each *grew* the
+     * distance, with more than [OFF_ROUTE_GROWTH_M] of total growth since the streak
+     * started — five noisy metres in a canyon must not ask the question, and thirty
+     * metres over two fixes is one bad fix, not a wrong turn. Once up, the flag clears
+     * only on a distance that shrinks or on [stepChanged] (wheel, auto-advance, new
+     * route — the caller's reset either way): an *equal* distance breaks the streak but
+     * keeps the question standing, because standing still is not walking back.
+     */
+    fun drift(prev: Drift, newDistanceM: Double, stepChanged: Boolean): Drift {
+        val last = prev.lastM
+        if (stepChanged || last == null) {
+            return Drift(runStartM = newDistanceM, lastM = newDistanceM)
+        }
+        return when {
+            // The number shrank: heading the right way again, all forgiven at once.
+            newDistanceM < last -> Drift(runStartM = newDistanceM, lastM = newDistanceM)
+            newDistanceM > last -> {
+                val n = prev.increases + 1
+                val tripped = n >= OFF_ROUTE_FIXES &&
+                    newDistanceM - prev.runStartM > OFF_ROUTE_GROWTH_M
+                prev.copy(lastM = newDistanceM, increases = n, offRoute = prev.offRoute || tripped)
+            }
+            // Exactly equal: not an increase, not a recovery. The streak restarts here.
+            else -> prev.copy(runStartM = newDistanceM, increases = 0)
+        }
+    }
+
     /**
      * Minutes left in the trip, for a lock face that has room for one number.
      *

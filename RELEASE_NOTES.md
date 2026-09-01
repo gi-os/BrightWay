@@ -1,39 +1,28 @@
-## BrightWay v1.11 — arrival that actually ends the trip
+## BrightWay v1.12 — color that survives a crash, and a hint when you've walked the wrong way
 
-**Arriving no longer gets missed when the last step is short.** One GPS fix can finish the
-second-to-last step and land within 20 m of the destination at the same time. The old code only
-checked for arrival when the step *didn't* advance, so that fix moved you onto the last step and
-then waited for the next fix to declare you arrived — and a phone lying still at the destination
-never sends one, because the GPS loop only reports after 2 m of movement. The service kept the
-GPS running in your pocket until its four-hour safety cap. Arrival is now decided on the same fix
-that advances the step, and there is a unit test standing on exactly that case.
+**A crash mid-navigation no longer leaves the whole phone in color.** "Color while navigating"
+used to write the daltonizer setting on the way into the nav screen and write it back on the way
+out — and a crash, a process kill, or arriving with the phone in your pocket meant the way out
+never ran. The whole phone stayed in color, permanently, with nothing on screen to explain why.
+The nav screen now asks BrightControl for color instead, over a bound service from light-common
+1.7.0: the request is held only while the screen is up and the trip is live, and the release is
+the binder connection dying — which a crash does for free. On a phone without BrightControl the
+library still writes the setting directly, so the app also puts greyscale back from state, not
+from transitions: at every launch and at the end of every trip, if nothing is navigating, the
+phone is made grey. However color got stuck on, the next launch unsticks it.
 
-**Routes can't start from where the phone was yesterday.** The location loop warms up from the
-system's last known fix, which is fine for drawing the map and useless as a route origin — it can
-be hours old. Routing now rejects any fix older than two minutes and says "Waiting for GPS fix"
-instead of quietly planning a trip from wherever the phone last had sky.
-
-**A rare race can no longer hold the GPS with nothing driving it.** A start request queued behind
-a shutdown used to land on a service whose coroutines were already cancelled: it took the GPS
-lease, and the loops that would have used it — and the cap timer that would have released it —
-silently never ran. A finished service instance now refuses to begin and just stops. A route that
-parses to zero steps (origin on top of destination) shuts down immediately too, instead of
-running a trip that can never arrive.
-
-**Coarse fixes can't fake an arrival.** A network fix with 100 m of slop can land "within 20 m"
-of a step endpoint it is nowhere near, skipping steps or ending the trip early. Fixes vaguer than
-40 m no longer make advance or arrival decisions.
-
-**The wheel updates the distance immediately.** Changing the step by wheel used to keep showing
-the old step's meters — on the big number and on the lock face — until the next fix, which a
-stationary phone never gets. The distance is now recomputed against the new step on the spot.
+**The app now says "off route?" when the distance keeps growing.** Walk past a turn and the big
+number just got bigger, with nothing to say so. Now, after five good fixes in a row that each
+grew the distance to the next turn — and more than 30 m of total growth, so GPS wander in a
+street canyon can't ask the question — a quiet "OFF ROUTE?" appears under the number, and the
+lock face's instruction gets " · off route?" appended. It is a hint, not a reroute. It comes down
+the moment the number shrinks, the step changes (wheel or auto-advance), or a new trip starts,
+and only fixes that pass the existing 40 m accuracy gate ever feed it. The rule is pure math with
+unit tests standing on its boundaries: four increases are not enough, 29 m of growth is not
+enough, one decrease forgives everything.
 
 **Smaller things.**
 
-- The map cache now budgets by memory (16 MB) instead of counting pictures; eight zoom levels of
-  full-size map could sit on ~52 MB of a very small heap.
-- A malformed route line degrades to "no map" with a reason instead of crashing the app.
-- The Settings key row and the home screen's empty state update the moment you scan a key,
-  instead of saying "No key" until something else redrew the screen.
-- Reopening the app after the system reclaimed it mid-trip no longer risks a crash on the way
-  back to the nav screen.
+- Arriving while the app is in the background now restores greyscale immediately, instead of
+  waiting for you to come back to the nav screen.
+- light-common 1.2.2 → 1.7.0.

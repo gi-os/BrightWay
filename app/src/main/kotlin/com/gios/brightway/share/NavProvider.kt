@@ -53,9 +53,14 @@ class NavProvider : ContentProvider() {
             val st = NavSession.state.value ?: return cursor
             val step = st.route.steps.getOrNull(st.stepIndex) ?: return cursor
             val distM = st.distToNextM ?: step.distanceM
+            // The lock face is built against exactly these eight columns, so the off-route
+            // hint rides inside the string it already draws rather than in a ninth column
+            // an older BrightControl would never read.
+            val instruction =
+                if (st.offRoute) "${step.instruction} · off route?" else step.instruction
             cursor.addRow(
                 arrayOf<Any?>(
-                    step.instruction,
+                    instruction,
                     distM.roundToInt(),
                     NavMath.etaMinutes(st.route.steps, st.stepIndex, st.distToNextM),
                     st.route.mode,

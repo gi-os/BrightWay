@@ -35,6 +35,7 @@ import com.gios.brightway.ui.SettingsScreen
 import com.gios.brightway.ui.TabBar
 import com.gios.brightway.ui.WayViewModel
 import com.gios.brightway.ui.theme.BrightWayTheme
+import com.gios.brightway.util.ColorMode
 import com.gios.light.common.hw.LightKey
 import com.gios.light.common.hw.LightKeys
 import com.gios.light.common.hw.LocalWheelBus
@@ -77,6 +78,15 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // State-driven colour reconcile. NavSession is in-memory, so a process that died
+        // mid-trip comes back here with no session — and if the direct-write fallback had
+        // lifted the daltonizer, nothing ever put it back: the whole phone is in colour
+        // with no screen explaining why. Not navigating means grey; write it, don't infer
+        // it from what might have happened. The grant may be absent, and runCatching
+        // belts what setColor already braces.
+        if (NavSession.state.value == null) {
+            runCatching { ColorMode.setColor(this, false) }
+        }
         handoff = Handoff.queryFrom(intent)
         LightReport.install(
             context = this,

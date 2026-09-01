@@ -18,6 +18,7 @@ import com.gios.brightway.data.Trips
 import com.gios.brightway.loc.Locator
 import com.gios.brightway.net.RouteOption
 import com.gios.brightway.share.NavProvider
+import com.gios.brightway.util.ColorMode
 import com.gios.brightway.util.Geo
 import com.gios.brightway.util.NavMath
 import kotlinx.coroutines.CoroutineScope
@@ -139,8 +140,13 @@ class NavService : Service() {
         if (next != st.stepIndex) {
             val target = st.route.steps[next]
             val nd = Geo.distanceM(lat, lon, target.endLat, target.endLon)
+            // A step change resets the off-route run — this same distance seeds the new one.
+            NavSession.driftFix(nd, stepChanged = true)
             NavSession.update {
-                it.copy(stepIndex = next, distToNextM = nd, updatedMs = System.currentTimeMillis())
+                it.copy(
+                    stepIndex = next, distToNextM = nd, offRoute = false,
+                    updatedMs = System.currentTimeMillis(),
+                )
             }
             // A short last step can be entered and finished by this same fix, and a phone
             // standing at the destination gets no more fixes (2 m of movement each) — so
@@ -150,7 +156,12 @@ class NavService : Service() {
                 return
             }
         } else {
-            NavSession.update { it.copy(distToNextM = d, updatedMs = System.currentTimeMillis()) }
+            // Same step, another accepted fix: feed the off-route rule. Only fixes past the
+            // 40 m gate above get here, so the streak can't be built out of network slop.
+            val off = NavSession.driftFix(d, stepChanged = false)
+            NavSession.update {
+                it.copy(distToNextM = d, offRoute = off, updatedMs = System.currentTimeMillis())
+            }
             // Standing on the last step's endpoint is arrival, and arrival ends the service.
             if (NavMath.arrived(st.stepIndex, st.route.steps.lastIndex, d)) {
                 shutdown()
@@ -181,6 +192,14 @@ class NavService : Service() {
             running = false
             scope.cancel()
         }
+        // State, not transition — the daltonizer lesson. Navigation just ended, however it
+        // ended: arrival in a pocket, the cap, END from the screen. If nobody is navigating,
+        // the phone should be grey, and the nav screen's own restore may never run — arrival
+        // with the app backgrounded leaves that composition alive but its onDispose unfired
+        // until the user comes back. When BrightControl holds the colour this write is a
+        // harmless second opinion; when the direct-write fallback lifted it, this is the only
+        // restore that runs. setColor swallows the missing grant.
+        if (NavSession.state.value == null) ColorMode.setColor(this, false)
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
     }

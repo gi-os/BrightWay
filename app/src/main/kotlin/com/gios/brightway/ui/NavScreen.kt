@@ -46,8 +46,8 @@ import com.gios.brightway.nav.NavSession
 import com.gios.brightway.net.RouteOption
 import com.gios.brightway.net.Step
 import com.gios.brightway.share.NavProvider
-import com.gios.brightway.util.ColorMode
 import com.gios.brightway.util.Geo
+import com.gios.light.common.color.ColourEffect
 import com.gios.light.common.hw.LocalWheelBus
 import com.gios.light.common.theme.Dim
 import com.gios.light.common.theme.Faint
@@ -137,12 +137,16 @@ fun NavScreen(vm: WayViewModel, onDone: () -> Unit) {
         }
     }
 
-    // Colour while navigating, greyscale on the way out. The flip is one secure-settings
-    // integer; ungranted it just returns false and the screen stays exactly as legible.
-    DisposableEffect(Unit) {
-        if (vm.store.colorNav) ColorMode.setColor(context, true)
-        onDispose { if (vm.store.colorNav) ColorMode.setColor(context, false) }
-    }
+    // Colour while navigating — asked for, not taken. ColourEffect holds a colour request
+    // on BrightControl over a bound service, and the release is the binder connection
+    // dying: a crash mid-trip lets go by itself, where the old DisposableEffect's onDispose
+    // never ran and left the whole phone in colour. Without BrightControl the library
+    // falls back to writing the daltonizer directly; NavService.shutdown() and
+    // MainActivity.onCreate reconcile that path back to grey from state. Gated on
+    // navActive so arrival drops the hold with the trip instead of waiting for the user
+    // to come back to this screen. Ungranted and unserved it does nothing, and the
+    // screen stays exactly as legible.
+    ColourEffect(vm.store.colorNav && navActive)
 
     // Leaving this screen on purpose — the END row or the back gesture — ends the trip,
     // and the service closes the journey-log entry on its way down. Leaving it because the
@@ -228,6 +232,17 @@ fun NavScreen(vm: WayViewModel, onDone: () -> Unit) {
                     color = if (distToNext == null && !arrived) Faint else Color.White,
                     modifier = Modifier.padding(top = 12.dp),
                 )
+                // A quiet question, not an alarm: five accepted fixes in a row grew that
+                // number and it cost more than 30 m. Gone the moment the number shrinks,
+                // the step changes, or the trip ends — see NavMath.drift.
+                if (navActive && session?.offRoute == true) {
+                    Text(
+                        "OFF ROUTE?",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Dim,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
             }
         }
 

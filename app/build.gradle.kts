@@ -46,7 +46,7 @@ android {
         targetSdk = 35
         // CI overwrites both from the workflow run number; see .github/workflows/build.yml
         versionCode = 1
-        versionName = "1.11.0"
+        versionName = "1.12.0"
 
         buildConfigField("String", "REPORT_TOKEN", "\"$reportToken\"")
         buildConfigField("String", "REPORT_REPO", "\"gi-os/light-reports\"")
@@ -100,8 +100,10 @@ android {
 }
 
 dependencies {
-    // Shake-to-report, the wheel, and the shared type/greys.
-    implementation("com.gios:light-common:1.2.2")
+    // Shake-to-report, the wheel, the shared type/greys — and from 1.7.0 the colour hold:
+    // ColourEffect() asks BrightControl for colour over a bound service, so a crash releases
+    // the hold when the binder dies instead of leaving the whole phone in colour.
+    implementation("com.gios:light-common:1.7.0")
 
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
     implementation(composeBom)

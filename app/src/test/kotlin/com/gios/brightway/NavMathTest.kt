@@ -63,6 +63,81 @@ class NavMathTest {
         assertFalse(NavMath.arrived(next, 3, 350.0))
     }
 
+    // ------------------------------------------------------------------ drift
+
+    /** Feeds distances in order, seeding first, and returns the final state. */
+    private fun fed(seed: Double, vararg distances: Double): NavMath.Drift {
+        var s = NavMath.drift(NavMath.Drift(), seed, stepChanged = false)
+        for (d in distances) s = NavMath.drift(s, d, stepChanged = false)
+        return s
+    }
+
+    @Test fun fourIncreasesAreNotOffRoute() {
+        // Plenty of metres, one fix short of the streak.
+        assertFalse(fed(100.0, 120.0, 140.0, 160.0, 180.0).offRoute)
+    }
+
+    @Test fun fiveIncreasesTotallingTwentyNineMetresAreNotOffRoute() {
+        // The streak is there but the growth is under the 30 m floor — GPS wander, not a wrong turn.
+        assertFalse(fed(100.0, 106.0, 112.0, 118.0, 124.0, 129.0).offRoute)
+    }
+
+    @Test fun fiveIncreasesTotallingThirtyOneMetresAreOffRoute() {
+        assertTrue(fed(100.0, 106.0, 112.0, 118.0, 124.0, 131.0).offRoute)
+    }
+
+    @Test fun exactlyThirtyMetresIsNotEnough() {
+        // "More than 30 m", strictly.
+        assertFalse(fed(100.0, 106.0, 112.0, 118.0, 124.0, 130.0).offRoute)
+    }
+
+    @Test fun oneDecreaseResetsTheStreak() {
+        // Four increases, a dip, four more: no streak of five ever forms.
+        assertFalse(
+            fed(100.0, 120.0, 140.0, 160.0, 180.0, 150.0, 170.0, 190.0, 210.0, 230.0).offRoute,
+        )
+    }
+
+    @Test fun aDecreaseClearsAStandingFlag() {
+        var s = fed(100.0, 110.0, 120.0, 130.0, 140.0, 150.0)
+        assertTrue(s.offRoute)
+        // The number shrank: heading the right way again, the question comes down at once.
+        s = NavMath.drift(s, 145.0, stepChanged = false)
+        assertFalse(s.offRoute)
+    }
+
+    @Test fun aStepChangeClearsAStandingFlag() {
+        var s = fed(100.0, 110.0, 120.0, 130.0, 140.0, 150.0)
+        assertTrue(s.offRoute)
+        // Wheel or auto-advance: new step, new question, this distance is the new baseline.
+        s = NavMath.drift(s, 400.0, stepChanged = true)
+        assertFalse(s.offRoute)
+        assertEquals(0, s.increases)
+    }
+
+    @Test fun growthCountsFromTheStreakStartNotTheTrip() {
+        // A dip resets the 30 m ledger too: the later streak's growth is measured from 150,
+        // so five increases of 4 m each (20 m) stay quiet even though the trip grew 70 m.
+        assertFalse(
+            fed(100.0, 160.0, 150.0, 154.0, 158.0, 162.0, 166.0, 170.0).offRoute,
+        )
+    }
+
+    @Test fun anEqualDistanceBreaksTheStreakWithoutClearingTheFlag() {
+        var s = fed(100.0, 110.0, 120.0, 130.0, 140.0, 150.0)
+        assertTrue(s.offRoute)
+        // Standing still is not walking back: the flag holds, but the streak restarts.
+        s = NavMath.drift(s, 150.0, stepChanged = false)
+        assertTrue(s.offRoute)
+        assertEquals(0, s.increases)
+    }
+
+    @Test fun theFlagStaysUpWhileTheDistanceKeepsGrowing() {
+        var s = fed(100.0, 110.0, 120.0, 130.0, 140.0, 150.0)
+        s = NavMath.drift(s, 160.0, stepChanged = false)
+        assertTrue(s.offRoute)
+    }
+
     // ------------------------------------------------------------------ etaMinutes
 
     @Test fun emptyRouteIsZero() {

@@ -52,13 +52,16 @@ fun SettingsScreen(vm: WayViewModel, onScanKey: () -> Unit) {
 
         item { SectionLabel("COLOUR") }
         item {
+            // Since v1.12 colour is asked of BrightControl, so the adb grant is only the
+            // fallback path — a phone with BrightControl serving works without it. The row
+            // therefore never dims: dimming on a missing grant would call a working toggle
+            // dead on exactly the phones the migration was for.
             val granted = ColorMode.granted(context)
             MenuRow(
                 label = "Colour while navigating",
                 sub = if (granted) "Subway bullets in their real colours"
-                else "Needs one adb grant — see the README",
+                else "Via BrightControl — or one adb grant, see the README",
                 detail = if (colorOn) "ON" else "OFF",
-                dim = !granted,
                 onClick = {
                     colorOn = !colorOn
                     vm.store.colorNav = colorOn
