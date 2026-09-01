@@ -22,6 +22,15 @@ object NavMath {
         if (distToEndM < ARRIVE_M && stepIndex < lastIndex) stepIndex + 1 else stepIndex
 
     /**
+     * Arrival: standing on the last step and within [ARRIVE_M] of its end. Checked after
+     * [advanced] as well as instead of it, because a short final step can be entered and
+     * finished by the same fix — and a stationary phone may never deliver another one to
+     * finish it with. An empty route (lastIndex < 0) never arrives; it never started.
+     */
+    fun arrived(stepIndex: Int, lastIndex: Int, distToEndM: Double): Boolean =
+        lastIndex >= 0 && stepIndex >= lastIndex && distToEndM < ARRIVE_M
+
+    /**
      * Minutes left in the trip, for a lock face that has room for one number.
      *
      * The steps ahead count at face value — their durations came from the Routes API and

@@ -39,7 +39,12 @@ import com.gios.light.common.theme.Faint
  */
 @Composable
 fun PlaceScreen(vm: WayViewModel, onGo: () -> Unit, onBack: () -> Unit) {
-    val place = vm.previewPlace.collectAsState().value ?: run { onBack(); return }
+    // A process-death restore lands here with no place to show. Popping the back stack is
+    // navigation, and navigation from inside composition is a crash — leave from an effect
+    // instead and draw nothing for the frame it takes.
+    val place = vm.previewPlace.collectAsState().value
+    LaunchedEffect(place == null) { if (place == null) onBack() }
+    if (place == null) return
     val fix by vm.locator.fix.collectAsState()
     var zoom by remember { mutableIntStateOf(16) }
     var bmp by remember { mutableStateOf<Bitmap?>(null) }

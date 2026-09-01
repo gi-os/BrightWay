@@ -3,6 +3,8 @@ package com.gios.brightway
 import com.gios.brightway.net.Step
 import com.gios.brightway.util.NavMath
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NavMathTest {
@@ -29,6 +31,36 @@ class NavMathTest {
 
     @Test fun neverAdvancesPastTheLastStep() {
         assertEquals(3, NavMath.advanced(3, 3, 0.0))
+    }
+
+    // ------------------------------------------------------------------ arrived
+
+    @Test fun arrivedOnTheLastStepWithinTheRadius() {
+        assertTrue(NavMath.arrived(3, 3, 19.9))
+        assertFalse(NavMath.arrived(3, 3, 20.0))
+    }
+
+    @Test fun notArrivedBeforeTheLastStep() {
+        assertFalse(NavMath.arrived(1, 3, 0.0))
+    }
+
+    @Test fun emptyRouteNeverArrives() {
+        assertFalse(NavMath.arrived(0, -1, 0.0))
+    }
+
+    @Test fun advanceOntoAShortLastStepArrivesOnTheSameFix() {
+        // One fix ends the penultimate step and lands within the radius of the last one.
+        // A stationary phone gets no further fixes, so arrival must be decided right here —
+        // this is the pair of calls NavService makes in its advance branch.
+        val next = NavMath.advanced(2, 3, 5.0)
+        assertEquals(3, next)
+        assertTrue(NavMath.arrived(next, 3, 8.0))
+    }
+
+    @Test fun advanceOntoALongLastStepDoesNotArrive() {
+        val next = NavMath.advanced(2, 3, 5.0)
+        assertEquals(3, next)
+        assertFalse(NavMath.arrived(next, 3, 350.0))
     }
 
     // ------------------------------------------------------------------ etaMinutes

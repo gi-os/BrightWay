@@ -2,6 +2,7 @@ package com.gios.brightway.nav
 
 import com.gios.brightway.data.Place
 import com.gios.brightway.net.RouteOption
+import com.gios.brightway.util.Geo
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -43,12 +44,25 @@ object NavSession {
         )
     }
 
-    /** The wheel (or the fix) moved the current step. Clamped; a no-op when not navigating. */
-    fun setStep(index: Int) {
+    /**
+     * The wheel (or the fix) moved the current step. Clamped; a no-op when not navigating.
+     *
+     * The distance is recomputed against the new step from the caller's fix, because the
+     * next fix may never come — a stationary phone gets none — and until then the big
+     * number and the lock face would keep showing the old step's metres. No fix means no
+     * number: null draws as "waiting for GPS…", which at least is not wrong.
+     */
+    fun setStep(index: Int, fixLat: Double?, fixLon: Double?) {
         val st = _state.value ?: return
         val last = st.route.steps.lastIndex.coerceAtLeast(0)
+        val i = index.coerceIn(0, last)
+        val step = st.route.steps.getOrNull(i)
+        val d = if (fixLat != null && fixLon != null && step != null) {
+            Geo.distanceM(fixLat, fixLon, step.endLat, step.endLon)
+        } else null
         _state.value = st.copy(
-            stepIndex = index.coerceIn(0, last),
+            stepIndex = i,
+            distToNextM = d,
             updatedMs = System.currentTimeMillis(),
         )
     }

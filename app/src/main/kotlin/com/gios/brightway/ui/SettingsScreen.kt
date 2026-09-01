@@ -39,7 +39,9 @@ fun SettingsScreen(vm: WayViewModel, onScanKey: () -> Unit) {
     LazyColumn(state = listState) {
         item { SectionLabel("GOOGLE MAPS KEY") }
         item {
-            val key = vm.store.apiKey
+            // Collected, not read from the pref: the QR-scan write lands mid-composition
+            // and a plain read would leave "No key" up until something else redrew this row.
+            val key by vm.apiKey.collectAsState()
             MenuRow(
                 label = if (key.isBlank()) "No key" else "•••• ${key.takeLast(4)}",
                 sub = "Generate the QR at gi-os.github.io/BrightWay",

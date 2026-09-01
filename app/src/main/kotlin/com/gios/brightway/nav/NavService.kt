@@ -85,8 +85,20 @@ class NavService : Service() {
             this, NOTE_ID, buildNote(),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION,
         )
+        // A start queued behind shutdown() lands on a corpse: the scope is already
+        // cancelled, so the launches below would silently never run — running would read
+        // true and the GPS lease would be held with nothing driving it and no cap timer
+        // to ever let go. A finished instance only ever stops.
+        if (finished) {
+            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return
+        }
         val st = NavSession.state.value
         if (st == null) { shutdown(); return }
+        // A degenerate route (origin on top of destination) parses to zero steps, and a
+        // trip with no steps has no endpoint to arrive at — it would run to the cap.
+        if (st.route.steps.isEmpty()) { shutdown(); return }
         // Whatever fix the locator already has beats "waiting for GPS" until the next one.
         seed(st)
         if (running) return
@@ -94,7 +106,8 @@ class NavService : Service() {
         Locator.get(this).acquire(LEASE)
         scope.launch {
             Locator.get(this@NavService).fix.filterNotNull().collect { f ->
-                onFix(f.latitude, f.longitude)
+                // hasAccuracy() false means "no estimate at all", which is worse than a bad one.
+                onFix(f.latitude, f.longitude, if (f.hasAccuracy()) f.accuracy else Float.MAX_VALUE)
             }
         }
         scope.launch {
@@ -115,7 +128,10 @@ class NavService : Service() {
     }
 
     /** The same advance rule the screen used to run: under 20 m of the step's end, move on. */
-    private fun onFix(lat: Double, lon: Double) {
+    private fun onFix(lat: Double, lon: Double, accuracyM: Float) {
+        // A coarse network fix can land "within 20 m" of an endpoint it is nowhere near;
+        // no decision — advance or arrival — is worth making on one.
+        if (accuracyM > MAX_FIX_ACCURACY_M) return
         val st = NavSession.state.value ?: return
         val step = st.route.steps.getOrNull(st.stepIndex) ?: return
         val d = Geo.distanceM(lat, lon, step.endLat, step.endLon)
@@ -126,10 +142,17 @@ class NavService : Service() {
             NavSession.update {
                 it.copy(stepIndex = next, distToNextM = nd, updatedMs = System.currentTimeMillis())
             }
+            // A short last step can be entered and finished by this same fix, and a phone
+            // standing at the destination gets no more fixes (2 m of movement each) — so
+            // arrival must be decided now, not deferred to a next fix that never comes.
+            if (NavMath.arrived(next, st.route.steps.lastIndex, nd)) {
+                shutdown()
+                return
+            }
         } else {
             NavSession.update { it.copy(distToNextM = d, updatedMs = System.currentTimeMillis()) }
             // Standing on the last step's endpoint is arrival, and arrival ends the service.
-            if (st.stepIndex >= st.route.steps.lastIndex && d < NavMath.ARRIVE_M) {
+            if (NavMath.arrived(st.stepIndex, st.route.steps.lastIndex, d)) {
                 shutdown()
                 return
             }
@@ -204,6 +227,9 @@ class NavService : Service() {
 
         /** Four hours. A hard cap, not a feature — see the class comment. */
         private const val HARD_CAP_MS = 4L * 60 * 60 * 1000
+
+        /** Fixes vaguer than this decide nothing; twice the arrive radius, GPS is well under. */
+        private const val MAX_FIX_ACCURACY_M = 40f
 
         /**
          * Called from the nav screen the moment it comes up, which is always in the

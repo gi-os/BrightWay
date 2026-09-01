@@ -23,8 +23,11 @@ class MapFetch(val bitmap: Bitmap?, val error: String? = null)
 class StaticMap(private val apiKey: () -> String) {
     private val http = OkHttpClient()
 
-    // A wheel-zoom session revisits the same few URLs; ~8 x 640x1280 bitmaps ≈ 25 MB tops.
-    private val cache = LruCache<String, Bitmap>(8)
+    // A wheel-zoom session revisits the same few URLs. Budgeted in kilobytes, not entries:
+    // counting entries let eight 640x1280 ARGB bitmaps sit on ~52 MB of a very small heap.
+    private val cache = object : LruCache<String, Bitmap>(16 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount / 1024
+    }
 
     /**
      * One picture, three optional layers: a route ([encodedPolyline]), the user's position
@@ -42,10 +45,14 @@ class StaticMap(private val apiKey: () -> String) {
         val key = apiKey()
         if (key.isBlank()) return@withContext MapFetch(null, "No API key — scan one in Settings")
         // Static Maps rejects URLs past ~8k chars; a long transit polyline alone can blow
-        // that. Thin it — 150 points is indistinguishable at panel resolution.
-        val enc = if (encodedPolyline.length > 5800) {
-            Polyline.encode(Polyline.downsample(Polyline.decode(encodedPolyline), 150))
-        } else encodedPolyline
+        // that. Thin it — 150 points is indistinguishable at panel resolution. Guarded:
+        // a malformed polyline throws out of decode, and out of a LaunchedEffect that is
+        // a crash — a bad route line should cost the map, not the app.
+        val enc = runCatching {
+            if (encodedPolyline.length > 5800) {
+                Polyline.encode(Polyline.downsample(Polyline.decode(encodedPolyline), 150))
+            } else encodedPolyline
+        }.getOrElse { return@withContext MapFetch(null, "Route line didn't decode") }
         val sb = StringBuilder("https://maps.googleapis.com/maps/api/staticmap")
         sb.append("?size=640x640&scale=2&maptype=roadmap")
         sb.append("&style=feature:poi%7Cvisibility:off")

@@ -1,6 +1,5 @@
 package com.gios.brightway.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -118,19 +117,5 @@ fun TabBar(selected: Int, labels: List<String>, onSelect: (Int) -> Unit) {
                 }
             }
         }
-    }
-}
-
-/** Inverted-video button; selection state that stays legible on a matte greyscale panel. */
-@Composable
-fun BlockButton(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Box(
-        modifier
-            .background(Color.White)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 12.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(label, style = MaterialTheme.typography.labelLarge, color = Color.Black)
     }
 }

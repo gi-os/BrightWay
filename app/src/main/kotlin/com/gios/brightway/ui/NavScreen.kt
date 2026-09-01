@@ -74,7 +74,12 @@ private fun glyph(maneuver: String): String = when {
  */
 @Composable
 fun NavScreen(vm: WayViewModel, onDone: () -> Unit) {
-    val route = vm.chosen.collectAsState().value ?: run { onDone(); return }
+    // A process-death restore lands here with no chosen route. Popping the back stack is
+    // navigation, and navigation from inside composition is a crash — leave from an effect
+    // instead and draw nothing for the frame it takes.
+    val route = vm.chosen.collectAsState().value
+    LaunchedEffect(route == null) { if (route == null) onDone() }
+    if (route == null) return
     val fix by vm.locator.fix.collectAsState()
     val context = LocalContext.current
     // Three-way toggle: steps → map → compass → steps ...
@@ -118,7 +123,12 @@ fun NavScreen(vm: WayViewModel, onDone: () -> Unit) {
         val latestIndex by rememberUpdatedState(stepIndex)
         LaunchedEffect(bus) {
             bus.notches.collect { n ->
-                NavSession.setStep(if (n > 0) latestIndex + 1 else latestIndex - 1)
+                // The current fix rides along so the distance follows the wheel immediately.
+                val f = vm.locator.fix.value
+                NavSession.setStep(
+                    if (n > 0) latestIndex + 1 else latestIndex - 1,
+                    f?.latitude, f?.longitude,
+                )
                 NavProvider.announce(context)
             }
         }

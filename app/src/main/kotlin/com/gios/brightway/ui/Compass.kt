@@ -70,7 +70,7 @@ import kotlinx.coroutines.delay
  *     north, ~13°W in NYC) and posture-remapped (past ~40° of pitch, heading means
  *     "where the back of the phone points").
  *
- * A raw magnetometer watch runs alongside: field magnitude far outside Earth's 25–65 µT
+ * A raw magnetometer watch runs alongside: field magnitude far outside Earth's 20–70 µT
  * means the sensor is reading a subway rail / radiator / magnet, and the label says so
  * instead of parroting the HAL's confidence.
  */

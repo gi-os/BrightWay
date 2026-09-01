@@ -1,6 +1,7 @@
 package com.gios.brightway.ui
 
 import android.app.Application
+import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.gios.brightway.data.Place
@@ -37,7 +38,11 @@ class WayViewModel(app: Application) : AndroidViewModel(app) {
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
 
-    val hasKey: Boolean get() = store.apiKey.isNotBlank()
+    // Mirrors the stored key so the screens redraw the moment a QR scan lands — a plain
+    // pref read in composition invalidates nothing, and "No key" used to linger until the
+    // screen was rebuilt for some other reason. The pref stays the source of truth on disk.
+    private val _apiKey = MutableStateFlow(store.apiKey)
+    val apiKey: StateFlow<String> = _apiKey
 
     fun clearError() { _error.value = null }
 
@@ -50,7 +55,10 @@ class WayViewModel(app: Application) : AndroidViewModel(app) {
                 else -> it
             }
         }.trim()
-        if (key.isNotBlank()) store.apiKey = key
+        if (key.isNotBlank()) {
+            store.apiKey = key
+            _apiKey.value = key
+        }
     }
 
     fun search() {
@@ -70,6 +78,11 @@ class WayViewModel(app: Application) : AndroidViewModel(app) {
     /** Compute WALK and TRANSIT together; the options screen shows both. */
     fun route(to: Place, onReady: () -> Unit) {
         val fix = locator.fix.value ?: run { _error.value = "Waiting for GPS fix"; return }
+        // The locator seeds itself from getLastKnownLocation, which can be hours old —
+        // good enough to warm the map, not good enough to be a route origin. A stale fix
+        // here routes from wherever the phone last had sky, so it waits like no fix at all.
+        val ageNs = SystemClock.elapsedRealtimeNanos() - fix.elapsedRealtimeNanos
+        if (ageNs > MAX_ORIGIN_AGE_NS) { _error.value = "Waiting for GPS fix"; return }
         destination.value = to
         store.addRecent(to)
         viewModelScope.launch {
@@ -116,5 +129,10 @@ class WayViewModel(app: Application) : AndroidViewModel(app) {
     private fun message(t: Throwable): String = when (t) {
         is ApiKeyMissing -> "No API key — scan one in Settings"
         else -> t.message ?: "Network error"
+    }
+
+    private companion object {
+        /** Two minutes. Older than this, the fix is where the phone was, not where it is. */
+        const val MAX_ORIGIN_AGE_NS = 2L * 60 * 1_000_000_000
     }
 }

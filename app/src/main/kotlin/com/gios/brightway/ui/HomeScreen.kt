@@ -22,7 +22,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
-import com.gios.brightway.util.Geo
 import com.gios.light.common.hw.WheelScroll
 import com.gios.light.common.theme.Faint
 
@@ -35,6 +34,8 @@ fun HomeScreen(vm: WayViewModel, onRoutes: () -> Unit, onPlace: (com.gios.bright
     val query by vm.query.collectAsState()
     val results by vm.results.collectAsState()
     val busy by vm.busy.collectAsState()
+    // Collected so the empty-state flips the moment a key is scanned in Settings.
+    val hasKey = vm.apiKey.collectAsState().value.isNotBlank()
     val listState = rememberLazyListState()
     WheelScroll(listState)
 
@@ -106,7 +107,7 @@ fun HomeScreen(vm: WayViewModel, onRoutes: () -> Unit, onPlace: (com.gios.bright
             if (results.isEmpty() && saved.isEmpty() && recents.isEmpty()) {
                 item {
                     EmptyState(
-                        if (vm.hasKey) "Search for a place,\nor save one in Settings"
+                        if (hasKey) "Search for a place,\nor save one in Settings"
                         else "Scan your Google Maps key\nin Settings to begin",
                         Modifier.padding(top = 60.dp),
                     )
