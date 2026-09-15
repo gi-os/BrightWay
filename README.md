@@ -2,6 +2,8 @@
 
 # BrightWay
 
+[**⬇ Download the latest APK**](https://github.com/gi-os/BrightWay/releases/latest) · free, open source.
+
 Walking and subway directions for the Light Phone III. Text-first: one big instruction,
 the wheel scrolls the rest of the trip. No map tiles, no Play Services, no account —
 you bring your own Google Maps Platform key.
