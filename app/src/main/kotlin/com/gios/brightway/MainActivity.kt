@@ -92,7 +92,8 @@ class MainActivity : ComponentActivity() {
             context = this,
             appName = "BrightWay",
             label = "way",
-            token = BuildConfig.REPORT_TOKEN,
+            // No key on the phone: reports queue until light-common 1.11.0, which posts them to the report relay.
+            token = "",
         )
         setContent {
             BrightWayTheme {
