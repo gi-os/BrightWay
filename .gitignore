@@ -6,5 +6,7 @@ local.properties
 *.iml
 .DS_Store
 
-# The release keystore is a CI secret now, decoded at build time. Never commit it.
-keystore/*.jks
+# Never commit signing material.
+*.jks
+*.keystore
+*.lineage
